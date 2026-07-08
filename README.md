@@ -9,12 +9,15 @@
 
 A **multiplayer strategic resource-management game bot** for Telegram groups. Players become lords of their own territory — managing economies, upgrading buildings, training armies, forging treaties, and launching attacks against rival lords — all within Telegram.
 
+> 🌍 **The bot now speaks three languages.** Run the variant that matches your community: `main.py` (Persian / فارسی), `main-en.py` (English), or `main-tr.py` (Turkish / Türkçe). See [Bot Language](#-bot-language).
+
 ---
 
 ## 📑 Table of Contents
 
 - [Features](#-features)
 - [Game Mechanics](#-game-mechanics)
+- [Bot Language](#-bot-language)
 - [Getting Started](#-getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
@@ -63,6 +66,20 @@ Each building can be upgraded through multiple levels. Higher levels produce mor
 
 ---
 
+## 🌍 Bot Language
+
+The bot's in-game interface — buttons, prompts, resource names, and channel announcements — is available in **three languages**. Each language is a self-contained, ready-to-run entry point. Pick the one that fits your group and run it; there is no configuration flag to set.
+
+| Language | File to run | In-game menu example |
+|---|---|---|
+| 🇮🇷 **Persian / فارسی** | `main.py` | `💰 دارایی` · `🛠️ ارتقا` · `⚔️ لشکرکشی` |
+| 🇬🇧 **English** | `main-en.py` | `💰 Assets` · `🛠️ Upgrade` · `⚔️ Military Campaign` |
+| 🇹🇷 **Turkish / Türkçe** | `main-tr.py` | `💰 Varlıklar` · `🛠️ Yükseltme` · `⚔️ Askeri Sefer` |
+
+> All three variants share identical game logic, commands, database schema (`game_bot.db`), and balance — only the player-facing text differs. You can switch languages at any time by running a different file against the same database.
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -88,7 +105,7 @@ Each building can be upgraded through multiple levels. Higher levels produce mor
 
 ### Configuration
 
-Open `main.py` and update the following values:
+Choose your language file — `main.py` (Persian), `main-en.py` (English), or `main-tr.py` (Turkish) — and update the following values at the top of it:
 
 ```python
 API_TOKEN = 'YOUR_TELEGRAM_BOT_API_TOKEN'
@@ -96,10 +113,10 @@ ADMIN_ID = 123456789          # Your Telegram user ID
 CHANNEL_ID = "@your_channel"  # Your Telegram channel username
 ```
 
-Then start the bot:
+Then start the bot with your chosen language:
 
 ```bash
-python main.py
+python main-en.py   # English  (or: python main.py for Persian, python main-tr.py for Turkish)
 ```
 
 > The SQLite database (`game_bot.db`) is created automatically on the first run.
@@ -134,7 +151,9 @@ python main.py
 
 ```
 Telegram-Strategic-GameBot/
-├── main.py          # Bot logic, handlers, and database setup
+├── main.py          # Bot (Persian / فارسی) — logic, handlers, and database setup
+├── main-en.py       # Bot (English) — same logic, English interface
+├── main-tr.py       # Bot (Turkish / Türkçe) — same logic, Turkish interface
 ├── LICENSE          # MIT License
 ├── SECURITY.md      # Security policy
 ├── README.md        # Project documentation (English)

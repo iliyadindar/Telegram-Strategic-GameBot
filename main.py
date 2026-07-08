@@ -1,6 +1,7 @@
 import telebot
 from telebot import types
 import sqlite3
+import html
 
 # Initialize the bot with your token
 API_TOKEN = 'YOUR TOKEN'
@@ -57,6 +58,19 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS users (
 conn.commit()
 
 user_context = {}
+
+# Valid asset columns that the admin may edit — used both to build the editor
+# buttons and to validate the column name before it is used in a SQL statement.
+VALID_ASSETS = (
+    'clothes', 'stones', 'wood', 'iron', 'gold', 'money', 'food', 'meat',
+    'swordsmen', 'gunmen', 'cavalry_swordsmen', 'cavalry_gunmen', 'special_guard',
+    'medium_cannons', 'large_cannons', 'small_ships', 'medium_ships', 'large_ships',
+)
+
+
+def escape_html(text):
+    """Escape user-provided text before placing it in an HTML-parsed message."""
+    return html.escape(text, quote=False) if text else text
 
 
 def is_group_chat(message):
@@ -132,8 +146,8 @@ def callback_query(call):
                 show_asset_change_options(call.message)
             else:
                 bot.answer_callback_query(call.id, "شما ادمین نیستید.")
-        elif len(data_parts) == 3 and data_parts[1] == 'asset':
-            asset_type = data_parts[2]
+        elif len(data_parts) >= 3 and data_parts[1] == 'asset':
+            asset_type = '_'.join(data_parts[2:])
             ask_for_new_asset_value(call.message, asset_type)
     elif data_parts[0] == 'weekly':
         if data_parts[1] == 'update':
@@ -427,7 +441,7 @@ def ask_for_private_message(message, user_id):
 
 
 def get_private_message(message, user_id):
-    private_message = message.text
+    private_message = escape_html(message.text)
     user_context[user_id] = {'private_message': private_message}
     cursor.execute("SELECT DISTINCT group_id FROM users")
     groups = cursor.fetchall()
@@ -439,12 +453,11 @@ def get_private_message(message, user_id):
         bot.send_message(message.chat.id, "انتخاب کنید که به کدام گروه ارسال شود:", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('private_send_'))
 def send_private_message(call, group_id):
     user_id = call.from_user.id
-    private_message = user_context[user_id].get('private_message')
+    private_message = user_context.get(user_id, {}).get('private_message')
     user_info = bot.get_chat(user_id)
-    user_name = f"<a href='tg://user?id={user_id}'>{user_info.first_name}</a>"
+    user_name = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
     if private_message:
         bot.send_message(group_id, f"📬 پیام خصوصی از {user_name}:\n\n{private_message}", parse_mode='HTML')
         bot.answer_callback_query(call.id, "پیام خصوصی ارسال شد.")
@@ -454,9 +467,7 @@ def send_private_message(call, group_id):
 
 def show_asset_change_options(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    asset_types = ['clothes', 'stones', 'wood', 'iron', 'gold', 'money', 'food', 'meat', 'swordsmen', 'gunmen',
-                   'cavalry_swordsmen', 'cavalry_gunmen', 'special_guard', 'medium_cannons', 'large_cannons',
-                   'small_ships', 'medium_ships', 'large_ships']
+    asset_types = VALID_ASSETS
     for asset in asset_types:
         markup.add(types.InlineKeyboardButton(asset, callback_data=f'change_asset_{asset}'))
     bot.send_message(message.chat.id, "انتخاب کنید که کدام دارایی را میخواهید تغییر دهید:", reply_markup=markup)
@@ -473,6 +484,9 @@ def set_new_asset_value(message, group_id):
     try:
         new_value = int(message.text)
         asset_type = user_context[group_id].get('asset_type')
+        if asset_type not in VALID_ASSETS:
+            bot.send_message(message.chat.id, "دارایی نامعتبر است.")
+            return
         cursor.execute(f"UPDATE users SET {asset_type} = ? WHERE group_id = ?", (new_value, group_id))
         conn.commit()
         bot.send_message(message.chat.id, f"{asset_type} به {new_value} تغییر یافت.")
@@ -494,7 +508,7 @@ def ask_for_treaty_content(message, user_id):
 
 
 def get_treaty_content(message, user_id):
-    treaty_content = message.text
+    treaty_content = escape_html(message.text)
     user_context[user_id] = {'treaty_content': treaty_content}
     cursor.execute("SELECT DISTINCT group_id FROM users")
     groups = cursor.fetchall()
@@ -506,16 +520,15 @@ def get_treaty_content(message, user_id):
         bot.send_message(message.chat.id, "انتخاب کنید که به کدام گروه ارسال شود:", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('treaty_send_'))
 def send_treaty_confirmation(call, group_id):
     user_id = call.from_user.id
-    treaty_content = user_context[user_id].get('treaty_content')
+    treaty_content = user_context.get(user_id, {}).get('treaty_content')
     if treaty_content:
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton("بله", callback_data='treaty_confirmed'))
         markup.add(types.InlineKeyboardButton("خیر", callback_data='treaty_not_confirmed'))
         user_info = bot.get_chat(user_id)
-        user_name = f"<a href='tg://user?id={user_id}'>{user_info.first_name}</a>"
+        user_name = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
         bot.send_message(group_id, f"📜 معاهده جدید از {user_name}:\n\n{treaty_content}\n\nتایید میکنید؟",
                          reply_markup=markup, parse_mode='HTML')
         user_context[user_id]['group_id'] = group_id
@@ -611,32 +624,32 @@ def ask_for_statement(message, user_id):
 
 def send_statement(message, user_id):
     user_info = bot.get_chat(user_id)
-    user_link = f"<a href='tg://user?id={user_id}'>{user_info.first_name}</a>"
-    group_name = message.chat.title if message.chat.title else "نامشخص"
+    user_link = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
+    group_name = escape_html(message.chat.title) if message.chat.title else "نامشخص"
     bot.send_message(message.chat.id, "بیانیه شما <b>ارسال شد</b>", parse_mode='HTML')
 
     additional_caption = f"\n\n🌍 از {group_name}\n👤 فرمانده: {user_link}"
 
     if message.text:
-        bot.send_message(CHANNEL_ID, f"{message.text}{additional_caption}", parse_mode='HTML')
+        bot.send_message(CHANNEL_ID, f"{escape_html(message.text)}{additional_caption}", parse_mode='HTML')
     elif message.photo:
-        original_caption = message.caption if message.caption else " "
+        original_caption = escape_html(message.caption) if message.caption else " "
         bot.send_photo(CHANNEL_ID, message.photo[-1].file_id, caption=f"{original_caption}{additional_caption}",
                        parse_mode='HTML')
     elif message.video:
-        original_caption = message.caption if message.caption else " "
+        original_caption = escape_html(message.caption) if message.caption else " "
         bot.send_video(CHANNEL_ID, message.video.file_id, caption=f"{original_caption}{additional_caption}",
                        parse_mode='HTML')
     elif message.document:
-        original_caption = message.caption if message.caption else " "
+        original_caption = escape_html(message.caption) if message.caption else " "
         bot.send_document(CHANNEL_ID, message.document.file_id, caption=f"{original_caption}{additional_caption}",
                           parse_mode='HTML')
     elif message.audio:
-        original_caption = message.caption if message.caption else " "
+        original_caption = escape_html(message.caption) if message.caption else " "
         bot.send_audio(CHANNEL_ID, message.audio.file_id, caption=f"{original_caption}{additional_caption}",
                        parse_mode='HTML')
     elif message.voice:
-        original_caption = message.caption if message.caption else " "
+        original_caption = escape_html(message.caption) if message.caption else " "
         bot.send_voice(CHANNEL_ID, message.voice.file_id, caption=f"{original_caption}{additional_caption}",
                        parse_mode='HTML')
 
@@ -649,7 +662,6 @@ def ask_for_attack_type(message):
     bot.send_message(message.chat.id, "نوع لشکرکشی را انتخاب کنید:", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('attack_type_'))
 def handle_attack_type_selection(call):
     global photo_url
     user_id = call.from_user.id
@@ -664,35 +676,35 @@ def handle_attack_type_selection(call):
 
 
 def get_attack_origin(message, user_id):
-    attack_details = message.text
+    attack_details = escape_html(message.text)
     user_context[user_id]['attack_details'] = attack_details
     bot.send_message(message.chat.id, "مبدا لشکرکشی را وارد کنید:")
     bot.register_next_step_handler(message, lambda msg: get_attack_destination(msg, user_id))
 
 
 def get_attack_destination(message, user_id):
-    attack_origin = message.text
+    attack_origin = escape_html(message.text)
     user_context[user_id]['attack_origin'] = attack_origin
     bot.send_message(message.chat.id, "مقصد لشکرکشی را وارد کنید:")
     bot.register_next_step_handler(message, lambda msg: get_attack_time(msg, user_id))
 
 
 def get_attack_time(message, user_id):
-    attack_destination = message.text
+    attack_destination = escape_html(message.text)
     user_context[user_id]['attack_destination'] = attack_destination
     bot.send_message(message.chat.id, "زمان رسیدن را وارد کنید:")
     bot.register_next_step_handler(message, lambda msg: send_attack_details(msg, user_id))
 
 
 def send_attack_details(message, user_id):
-    attack_time = message.text
+    attack_time = escape_html(message.text)
     attack_type = user_context[user_id]['attack_type']
     attack_details = user_context[user_id]['attack_details']
     attack_origin = user_context[user_id]['attack_origin']
     attack_destination = user_context[user_id]['attack_destination']
     # Get user info
     user_info = bot.get_chat(user_id)
-    user_name = f"<a href='tg://user?id={user_id}'>{user_info.first_name}</a>"
+    user_name = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
 
     # Send details to admin
     bot.send_message(ADMIN_ID,
