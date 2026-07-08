@@ -161,8 +161,8 @@ def callback_query(call):
                 show_asset_change_options(call.message)
             else:
                 bot.answer_callback_query(call.id, "Yönetici değilsiniz.")
-        elif len(data_parts) == 3 and data_parts[1] == 'asset':
-            asset_type = data_parts[2]
+        elif len(data_parts) >= 3 and data_parts[1] == 'asset':
+            asset_type = '_'.join(data_parts[2:])
             ask_for_new_asset_value(call.message, asset_type)
     elif data_parts[0] == 'weekly':
         if data_parts[1] == 'update':
