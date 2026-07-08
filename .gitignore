@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite database created at runtime
+game_bot.db
+
+# Virtual environments
+.venv/
+venv/
+env/

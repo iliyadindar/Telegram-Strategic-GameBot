@@ -9,6 +9,8 @@
 
 Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**. Oyuncular kendi topraklarının lordları olur — ekonomi yönetimi, bina yükseltme, ordu eğitimi, antlaşma yapma ve rakip lordlara saldırı düzenleme — hepsi Telegram üzerinden.
 
+> 🌍 **Bot artık üç dili destekliyor.** Grubunuza uyan dosyayı çalıştırın: `main.py` (Farsça / فارسی), `main-en.py` (İngilizce) veya `main-tr.py` (Türkçe). Türkçe arayüz için `python main-tr.py` komutunu çalıştırın.
+
 ---
 
 ## 📑 İçindekiler
@@ -88,7 +90,7 @@ Her bina birden fazla seviyede yükseltilebilir. Daha yüksek seviyeler haftalı
 
 ### Yapılandırma
 
-`main.py` dosyasını açın ve aşağıdaki değerleri güncelleyin:
+Dil dosyanızı seçin — `main.py` (Farsça), `main-en.py` (İngilizce) veya `main-tr.py` (Türkçe) — ve dosyanın başındaki aşağıdaki değerleri güncelleyin:
 
 ```python
 API_TOKEN = 'YOUR_TELEGRAM_BOT_API_TOKEN'
@@ -96,10 +98,10 @@ ADMIN_ID = 123456789          # Telegram kullanıcı kimliğiniz
 CHANNEL_ID = "@your_channel"  # Telegram kanal kullanıcı adınız
 ```
 
-Ardından botu başlatın:
+Ardından seçtiğiniz dilde botu başlatın:
 
 ```bash
-python main.py
+python main-tr.py   # Türkçe  (veya: Farsça için python main.py, İngilizce için python main-en.py)
 ```
 
 > SQLite veritabanı (`game_bot.db`) ilk çalıştırmada otomatik olarak oluşturulur.
@@ -134,7 +136,9 @@ python main.py
 
 ```
 Telegram-Strategic-GameBot/
-├── main.py          # Bot mantığı, işleyiciler ve veritabanı kurulumu
+├── main.py          # Bot (Farsça) — mantık, işleyiciler ve veritabanı kurulumu
+├── main-en.py       # Bot (İngilizce) — aynı mantık, İngilizce arayüz
+├── main-tr.py       # Bot (Türkçe) — aynı mantık, Türkçe arayüz
 ├── LICENSE          # MIT Lisansı
 ├── SECURITY.md      # Güvenlik politikası
 ├── README.md        # Proje dokümantasyonu (İngilizce)
