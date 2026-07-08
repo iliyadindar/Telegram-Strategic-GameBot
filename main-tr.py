@@ -58,6 +58,14 @@ conn.commit()
 
 user_context = {}
 
+# Yöneticinin düzenleyebileceği geçerli varlık sütunları — hem düzenleyici
+# butonlarını oluşturmak hem de sütun adını SQL'de kullanmadan önce doğrulamak için.
+VALID_ASSETS = (
+    'clothes', 'stones', 'wood', 'iron', 'gold', 'money', 'food', 'meat',
+    'swordsmen', 'gunmen', 'cavalry_swordsmen', 'cavalry_gunmen', 'special_guard',
+    'medium_cannons', 'large_cannons', 'small_ships', 'medium_ships', 'large_ships',
+)
+
 # Varlık sütunları için görünen etiketler (yönetici varlık düzenleyicisi kullanır).
 # Alttaki callback verisi ve veritabanı sütun adı İngilizce kalır.
 asset_labels = {
@@ -468,10 +476,9 @@ def get_private_message(message, user_id):
         bot.send_message(message.chat.id, "Hangi gruba gönderileceğini seçin:", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('private_send_'))
 def send_private_message(call, group_id):
     user_id = call.from_user.id
-    private_message = user_context[user_id].get('private_message')
+    private_message = user_context.get(user_id, {}).get('private_message')
     user_info = bot.get_chat(user_id)
     user_name = f"<a href='tg://user?id={user_id}'>{user_info.first_name}</a>"
     if private_message:
@@ -483,9 +490,7 @@ def send_private_message(call, group_id):
 
 def show_asset_change_options(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    asset_types = ['clothes', 'stones', 'wood', 'iron', 'gold', 'money', 'food', 'meat', 'swordsmen', 'gunmen',
-                   'cavalry_swordsmen', 'cavalry_gunmen', 'special_guard', 'medium_cannons', 'large_cannons',
-                   'small_ships', 'medium_ships', 'large_ships']
+    asset_types = VALID_ASSETS
     for asset in asset_types:
         markup.add(types.InlineKeyboardButton(asset_labels.get(asset, asset), callback_data=f'change_asset_{asset}'))
     bot.send_message(message.chat.id, "Hangi varlığı değiştirmek istediğinizi seçin:", reply_markup=markup)
@@ -502,6 +507,9 @@ def set_new_asset_value(message, group_id):
     try:
         new_value = int(message.text)
         asset_type = user_context[group_id].get('asset_type')
+        if asset_type not in VALID_ASSETS:
+            bot.send_message(message.chat.id, "Geçersiz varlık.")
+            return
         cursor.execute(f"UPDATE users SET {asset_type} = ? WHERE group_id = ?", (new_value, group_id))
         conn.commit()
         bot.send_message(message.chat.id, f"{asset_labels.get(asset_type, asset_type)} {new_value} olarak değiştirildi.")
@@ -535,10 +543,9 @@ def get_treaty_content(message, user_id):
         bot.send_message(message.chat.id, "Hangi gruba gönderileceğini seçin:", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('treaty_send_'))
 def send_treaty_confirmation(call, group_id):
     user_id = call.from_user.id
-    treaty_content = user_context[user_id].get('treaty_content')
+    treaty_content = user_context.get(user_id, {}).get('treaty_content')
     if treaty_content:
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton("Evet", callback_data='treaty_confirmed'))
@@ -678,7 +685,6 @@ def ask_for_attack_type(message):
     bot.send_message(message.chat.id, "Sefer türünü seçin:", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('attack_type_'))
 def handle_attack_type_selection(call):
     global photo_url
     user_id = call.from_user.id
