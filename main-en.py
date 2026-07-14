@@ -3,6 +3,8 @@ from telebot import types
 import sqlite3
 import html
 
+import trade_system
+
 # Initialize the bot with your token
 API_TOKEN = 'YOUR TOKEN'
 ADMIN_ID = 000
@@ -58,6 +60,9 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS users (
 conn.commit()
 
 user_context = {}
+
+# World trade system (sea + land routes, tolls, live convoy tracking)
+trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='en')
 
 # Valid asset columns that the admin may edit — used both to build the editor
 # buttons and to validate the column name before it is used in a SQL statement.
@@ -135,9 +140,11 @@ def start(message):
             markup.add(types.InlineKeyboardButton("✉️ Private Message", callback_data='private_message'))
             markup.add(types.InlineKeyboardButton("📜 Treaty", callback_data='treaty'))
             markup.add(types.InlineKeyboardButton("⚔️ Military Campaign", callback_data='attack'))
+            markup.add(types.InlineKeyboardButton("🚢 World Trade", callback_data='trd:menu'))
             if user_id == ADMIN_ID:
                 markup.add(types.InlineKeyboardButton("🔨 Weekly Update", callback_data='weekly_update'))
                 markup.add(types.InlineKeyboardButton("🛠️ Set Assets", callback_data='change_assets'))
+                markup.add(types.InlineKeyboardButton("🌍 Trade Admin", callback_data='trd:adm'))
             bot.send_message(message.chat.id, "Welcome, my lord", reply_markup=markup)
         else:
             bot.reply_to(message, "You must first register with /setlord.")
@@ -147,6 +154,9 @@ def start(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    if call.data.startswith('trd:'):
+        trade_system.handle_callback(call)
+        return
     user_id = call.from_user.id
     data_parts = call.data.split('_')
     global item_to_upgrade
