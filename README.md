@@ -11,6 +11,8 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 
 > 🌍 **The bot now speaks three languages.** Run the variant that matches your community: `main.py` (Persian / فارسی), `main-en.py` (English), or `main-tr.py` (Turkish / Türkçe). See [Bot Language](#-bot-language).
 
+> 🚢 **NEW — World Trade.** Lords can now trade with each other by sea and land across a real world map: pick your route (pay the Suez Canal toll or sail around Africa), own straits and canals to collect tolls, and watch your convoy's progress live. See [World Trade](#world-trade).
+
 ---
 
 ## 📑 Table of Contents
@@ -43,7 +45,8 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 | 🔔 **Weekly Production Cycles** | Collect factory and building outputs on a weekly schedule |
 | 💬 **In-Game Communication** | Send private messages between groups and publish statements to channels |
 | 🛡️ **Attack & Defense** | Plan and record military campaigns with detailed attack tracking |
-| 🔧 **Admin Controls** | Adjust asset values and trigger weekly updates |
+| 🚢 **World Trade** | Send goods to other lords by sea or land across a world map of oceans, straits, canals and Silk-Road passes — route choice, tolls, chokepoint ownership, and live convoy tracking |
+| 🔧 **Admin Controls** | Adjust asset values, trigger weekly updates, and manage trade locations, chokepoint owners, and trade settings |
 
 ---
 
@@ -63,6 +66,19 @@ Each building can be upgraded through multiple levels. Higher levels produce mor
 - Stone Factory · Wood Factory · Iron Factory · Gold Mine
 - Farm · Animal Farm · Clothes Factory · Bank
 - Military camps and shipyards for each unit type
+
+### World Trade
+
+Lords trade resources with each other across two world-map graphs, entirely through inline buttons:
+
+- **Sea routes** 🚢 — oceans, seas and gulfs connected through straits and canals (Suez, Panama, Hormuz, Bab-el-Mandeb, Malacca…). Chokepoints charge a toll; free-but-long detours exist around the Cape of Good Hope and Cape Horn.
+- **Land routes** 🐫 — Silk-Road regions (Persia, Anatolia, India, China…) linked through tolled passes such as Khyber, Pamir and the Sahara Route.
+- **Route choice** — the bot quotes up to three routes (fastest / toll-free / cheapest) with duration, fees and tolls; the sender picks the trade-off.
+- **Ships & caravans** — sea trades require ships with cargo capacity (locked until delivery); land trades hire caravans.
+- **Offers & escrow** — goods, vehicles and fees are deducted when the offer is sent; the receiving lord accepts or declines, and declined, cancelled or expired offers are fully refunded.
+- **Live tracking** — a background ticker moves convoys in real time and edits the tracking message at every waypoint ("the shipment passed the Suez Canal — toll paid"), announcing departures and arrivals to the game channel.
+- **Chokepoint ownership** 🪙 — the admin can grant a group ownership of any strait, canal or pass: passage tolls are then paid into that group's treasury, and its own convoys pass free. Tolls on unowned chokepoints are burned.
+- **Admin tuning** — each group's sea/land home location plus every speed, fee, toll and capacity value is editable in-game from the trade admin panel.
 
 ---
 
@@ -142,8 +158,10 @@ python main-en.py   # English  (or: python main.py for Persian, python main-tr.p
 | ✉️ **Private Message** | Send a private message to another group |
 | 📜 **Treaty** | Create, send, or confirm treaties with other players |
 | ⚔️ **Military Campaign** | Plan and record attack details |
+| 🚢 **World Trade** | Send trade convoys to other lords by sea or land |
 | 🔨 **Weekly Update** | Collect weekly factory outputs *(admin only)* |
 | 🛠️ **Set Assets** | Adjust asset values *(admin only)* |
+| 🌍 **Trade Admin** | Assign home locations, chokepoint owners and trade settings *(admin only)* |
 
 ---
 
@@ -154,6 +172,7 @@ Telegram-Strategic-GameBot/
 ├── main.py          # Bot (Persian / فارسی) — logic, handlers, and database setup
 ├── main-en.py       # Bot (English) — same logic, English interface
 ├── main-tr.py       # Bot (Turkish / Türkçe) — same logic, Turkish interface
+├── trade_system.py  # World trade engine shared by all three bots (map graphs, routing, tolls, live tracking)
 ├── LICENSE          # MIT License
 ├── SECURITY.md      # Security policy
 ├── README.md        # Project documentation (English)

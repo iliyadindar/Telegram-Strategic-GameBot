@@ -11,6 +11,8 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 
 > 🌍 **Bot artık üç dili destekliyor.** Grubunuza uyan dosyayı çalıştırın: `main.py` (Farsça / فارسی), `main-en.py` (İngilizce) veya `main-tr.py` (Türkçe). Türkçe arayüz için `python main-tr.py` komutunu çalıştırın.
 
+> 🚢 **YENİ — Dünya Ticareti.** Lordlar artık gerçek bir dünya haritası üzerinde deniz ve kara yoluyla birbirleriyle ticaret yapabilir: rotanızı seçin (Süveyş Kanalı geçiş ücretini ödeyin ya da Afrika'yı dolaşın), boğazlara sahip olup geçiş ücretlerini hazinenize aktarın ve sevkiyatınızı canlı izleyin. Bkz. [Dünya Ticareti](#dünya-ticareti).
+
 ---
 
 ## 📑 İçindekiler
@@ -42,7 +44,8 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 | 🔔 **Haftalık Üretim Döngüleri** | Fabrika ve bina çıktılarını haftalık olarak toplama |
 | 💬 **Oyun İçi İletişim** | Gruplar arası özel mesaj gönderme ve kanala bildiri yayınlama |
 | 🛡️ **Saldırı ve Savunma** | Detaylı saldırı takibi ile askeri seferleri planlama ve kaydetme |
-| 🔧 **Yönetici Kontrolleri** | Varlık değerlerini ayarlama ve haftalık güncellemeleri tetikleme |
+| 🚢 **Dünya Ticareti** | Okyanuslar, boğazlar, kanallar ve İpek Yolu geçitlerinden oluşan dünya haritasında deniz ve kara yoluyla diğer lordlara mal gönderme — rota seçimi, geçiş ücretleri, boğaz sahipliği ve canlı sevkiyat takibi |
+| 🔧 **Yönetici Kontrolleri** | Varlık değerlerini ayarlama, haftalık güncellemeleri tetikleme ve konumlar, boğaz sahipliği ile ticaret ayarlarını yönetme |
 
 ---
 
@@ -62,6 +65,19 @@ Her bina birden fazla seviyede yükseltilebilir. Daha yüksek seviyeler haftalı
 - Taş Fabrikası · Odun Fabrikası · Demir Fabrikası · Altın Madeni
 - Çiftlik · Hayvan Çiftliği · Giysi Fabrikası · Banka
 - Her birim türü için askeri kamplar ve tersaneler
+
+### Dünya Ticareti
+
+Lordlar, tamamen cam düğmelerle, iki dünya haritası üzerinden birbirleriyle ticaret yapar:
+
+- **Deniz rotaları** 🚢 — boğazlar ve kanallarla (Süveyş, Panama, Hürmüz, Bab-ül Mendeb, Malakka...) birbirine bağlanan okyanuslar, denizler ve körfezler. Geçiş noktaları ücretlidir; Ümit Burnu ve Horn Burnu üzerinden ücretsiz ama uzun rotalar vardır.
+- **Kara rotaları** 🐫 — Hayber, Pamir ve Sahra Yolu gibi ücretli geçitlerle bağlanan İpek Yolu bölgeleri (Pers, Anadolu, Hindistan, Çin...).
+- **Rota seçimi** — bot en fazla üç rota (en hızlı / geçiş ücretsiz / en ucuz) için süre, ücret ve geçiş maliyetlerini gösterir; seçimi gönderici yapar.
+- **Gemiler ve kervanlar** — deniz ticareti yük kapasiteli gemiler gerektirir (teslimata kadar kilitlenir); kara ticareti kervanlarla yapılır.
+- **Teklif ve emanet** — mallar, araçlar ve ücretler teklif gönderilirken düşülür; hedef lord kabul veya reddeder; reddedilen, iptal edilen veya süresi dolan teklifler tamamen iade edilir.
+- **Canlı takip** — bot sevkiyatı gerçek zamanlı ilerletir ve her ara noktada takip mesajını düzenler ("sevkiyat Süveyş Kanalı geçişini tamamladı — ücret ödendi"); kalkış ve varışlar oyun kanalına duyurulur.
+- **Boğaz sahipliği** 🪙 — yönetici herhangi bir boğaz, kanal veya geçidin sahipliğini bir gruba verebilir: geçiş ücretleri o grubun hazinesine gider ve kendi sevkiyatları ücretsiz geçer. Sahipsiz geçişlerin ücretleri yakılır.
+- **Yönetici ayarları** — her grubun deniz/kara konumu ile tüm hız, ücret, geçiş ve kapasite değerleri oyun içinden düzenlenebilir.
 
 ---
 
@@ -127,8 +143,10 @@ python main-tr.py   # Türkçe  (veya: Farsça için python main.py, İngilizce 
 | ✉️ **Özel Mesaj** | Başka bir gruba özel mesaj gönderin |
 | 📜 **Antlaşma** | Diğer oyuncularla antlaşma oluşturun, gönderin veya onaylayın |
 | ⚔️ **Askeri Sefer** | Saldırı detaylarını planlayın ve kaydedin |
+| 🚢 **Dünya Ticareti** | Deniz veya kara yoluyla diğer lordlara ticaret sevkiyatı gönderin |
 | 🔨 **Haftalık Güncelleme** | Haftalık fabrika çıktılarını toplayın *(yalnızca yönetici)* |
 | 🛠️ **Varlık Ayarı** | Varlık değerlerini ayarlayın *(yalnızca yönetici)* |
+| 🌍 **Ticaret Yönetimi** | Konumları, boğaz sahipliğini ve ticaret ayarlarını yönetin *(yalnızca yönetici)* |
 
 ---
 
@@ -139,6 +157,7 @@ Telegram-Strategic-GameBot/
 ├── main.py          # Bot (Farsça) — mantık, işleyiciler ve veritabanı kurulumu
 ├── main-en.py       # Bot (İngilizce) — aynı mantık, İngilizce arayüz
 ├── main-tr.py       # Bot (Türkçe) — aynı mantık, Türkçe arayüz
+├── trade_system.py  # Üç botun paylaştığı dünya ticareti motoru (dünya haritası, rotalama, geçiş ücretleri, canlı takip)
 ├── LICENSE          # MIT Lisansı
 ├── SECURITY.md      # Güvenlik politikası
 ├── README.md        # Proje dokümantasyonu (İngilizce)
