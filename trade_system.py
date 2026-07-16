@@ -289,6 +289,16 @@ STRINGS = {
         'btn_home_sea': "⚓️ تعیین موقعیت دریایی گروه‌ها",
         'btn_home_land': "🏔 تعیین موقعیت زمینی گروه‌ها",
         'btn_cfg': "⚙️ تنظیمات تجارت",
+        'btn_owners': "🪙 مالکیت تنگه‌ها و گذرگاه‌ها",
+        'own_title': "🪙 تنگه‌ها و گذرگاه‌ها (صفحه {p}) — برای تعیین مالک روی یکی بزنید:",
+        'own_unowned': "بدون مالک",
+        'own_pick': "مالک {node} را انتخاب کنید:",
+        'btn_no_owner': "🚫 بدون مالک",
+        'own_set': "🪙 {node} از این پس در مالکیت {g} است و عوارض عبور به خزانه‌اش واریز می‌شود.",
+        'own_cleared': "🪙 {node} دیگر مالکی ندارد؛ عوارض آن سوزانده می‌شود.",
+        'toll_income': "🪙 خزانه شما {amount} پول عوارض دریافت کرد!\nمحموله تجارت #{tid} از {node} عبور کرد.",
+        'track_choke_owned': "🪙 محموله از {cur} عبور کرد — عوارض به {owner} پرداخت شد",
+        'track_pass': "🌫 محموله از {cur} عبور کرد",
         'adm_pick_group': "گروه را انتخاب کنید:",
         'adm_pick_node': "موقعیت {mode} را برای {g} انتخاب کنید:",
         'home_set': "🏠 موقعیت {mode} گروه {g} روی «{node}» تنظیم شد.",
@@ -369,6 +379,16 @@ STRINGS = {
         'btn_home_sea': "⚓️ Set groups' sea locations",
         'btn_home_land': "🏔 Set groups' land locations",
         'btn_cfg': "⚙️ Trade settings",
+        'btn_owners': "🪙 Chokepoint ownership",
+        'own_title': "🪙 Straits, canals and passes (page {p}) — tap one to set its owner:",
+        'own_unowned': "unowned",
+        'own_pick': "Choose the owner of {node}:",
+        'btn_no_owner': "🚫 No owner",
+        'own_set': "🪙 {node} is now owned by {g}; passage tolls go to their treasury.",
+        'own_cleared': "🪙 {node} is now unowned; its tolls are burned.",
+        'toll_income': "🪙 Your treasury collected {amount} money in tolls!\nThe shipment of trade #{tid} passed {node}.",
+        'track_choke_owned': "🪙 The shipment passed {cur} — toll paid to {owner}",
+        'track_pass': "🌫 The shipment passed {cur}",
         'adm_pick_group': "Choose a group:",
         'adm_pick_node': "Choose the {mode} location for {g}:",
         'home_set': "🏠 The {mode} location of {g} was set to «{node}».",
@@ -449,6 +469,16 @@ STRINGS = {
         'btn_home_sea': "⚓️ Grupların deniz konumlarını ayarla",
         'btn_home_land': "🏔 Grupların kara konumlarını ayarla",
         'btn_cfg': "⚙️ Ticaret ayarları",
+        'btn_owners': "🪙 Boğaz ve geçit sahipliği",
+        'own_title': "🪙 Boğazlar, kanallar ve geçitler (sayfa {p}) — sahibini ayarlamak için birine dokunun:",
+        'own_unowned': "sahipsiz",
+        'own_pick': "{node} sahibini seçin:",
+        'btn_no_owner': "🚫 Sahipsiz",
+        'own_set': "🪙 {node} artık {g} grubuna ait; geçiş ücretleri hazinesine gider.",
+        'own_cleared': "🪙 {node} artık sahipsiz; geçiş ücretleri yakılır.",
+        'toll_income': "🪙 Hazineniz {amount} para geçiş ücreti topladı!\n#{tid} ticaretinin sevkiyatı {node} geçişini kullandı.",
+        'track_choke_owned': "🪙 Sevkiyat {cur} geçişini tamamladı — ücret {owner} grubuna ödendi",
+        'track_pass': "🌫 Sevkiyat {cur} geçişini tamamladı",
         'adm_pick_group': "Bir grup seçin:",
         'adm_pick_node': "{g} için {mode} konumunu seçin:",
         'home_set': "🏠 {g} grubunun {mode} konumu «{node}» olarak ayarlandı.",
@@ -505,6 +535,7 @@ def _migrate():
             vehicles    TEXT NOT NULL,
             route       TEXT NOT NULL,
             leg_minutes TEXT NOT NULL,
+            tolls       TEXT DEFAULT '[]',
             leg         INTEGER DEFAULT 0,
             fee_paid    INTEGER DEFAULT 0,
             status      TEXT DEFAULT 'offered',
@@ -514,8 +545,15 @@ def _migrate():
             offer_chat_id INTEGER, offer_msg_id INTEGER,
             track_chat_id INTEGER, track_msg_id INTEGER
         )''')
+        try:
+            # older databases created before chokepoint ownership existed
+            _conn.execute("ALTER TABLE trades ADD COLUMN tolls TEXT DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass
         _conn.execute('''CREATE TABLE IF NOT EXISTS trade_config (
             key TEXT PRIMARY KEY, value INTEGER NOT NULL)''')
+        _conn.execute('''CREATE TABLE IF NOT EXISTS chokepoint_owners (
+            node_id TEXT PRIMARY KEY, group_id INTEGER NOT NULL)''')
         _conn.commit()
 
 
@@ -635,6 +673,35 @@ def _toll(nid):
     return cfg(key) if key in CONFIG_DEFAULTS else 0
 
 
+def _owner_of(nid):
+    with _lock:
+        row = _conn.execute("SELECT group_id FROM chokepoint_owners WHERE node_id=?",
+                            (nid,)).fetchone()
+    return row[0] if row else None
+
+
+def _set_owner(nid, gid):
+    with _lock:
+        if gid:
+            _conn.execute("INSERT OR REPLACE INTO chokepoint_owners (node_id, group_id) "
+                          "VALUES (?, ?)", (nid, gid))
+        else:
+            _conn.execute("DELETE FROM chokepoint_owners WHERE node_id=?", (nid,))
+        _conn.commit()
+
+
+def _toll_for(nid, sender_gid=None):
+    """Effective toll: owners pass their own chokepoints for free."""
+    amt = _toll(nid)
+    if amt and sender_gid is not None and _owner_of(nid) == sender_gid:
+        return 0
+    return amt
+
+
+def _mode_of_node(nid):
+    return 'sea' if nid in SEA_NODES else 'land'
+
+
 def _adj(mode):
     if mode not in _adj_cache:
         adj = {n: [] for n in _nodes(mode)}
@@ -680,7 +747,7 @@ def _dijkstra(adj, src, dst, blocked=frozenset(), cost_fn=None):
     return None
 
 
-def _route_info(mode, path, label, local=False):
+def _route_info(mode, path, label, local=False, sender_gid=None):
     mpu = cfg('sea_min_per_unit' if mode == 'sea' else 'land_min_per_unit')
     if local:
         leg_units = [1]
@@ -689,7 +756,8 @@ def _route_info(mode, path, label, local=False):
         leg_units = [w[frozenset((path[i], path[i + 1]))] for i in range(len(path) - 1)]
     units = sum(leg_units)
     leg_minutes = [u * mpu for u in leg_units]
-    tolls = [(nid, _toll(nid)) for nid in path if _toll(nid) > 0]
+    tolls = [(nid, _toll_for(nid, sender_gid)) for nid in path]
+    tolls = [(nid, amt) for nid, amt in tolls if amt > 0]
     base_fee = units * cfg('fee_per_unit')
     toll_total = sum(a for _, a in tolls)
     return {
@@ -700,13 +768,16 @@ def _route_info(mode, path, label, local=False):
     }
 
 
-def find_routes(mode, src, dst):
-    """Up to 3 deduplicated route options between two home nodes."""
+def find_routes(mode, src, dst, sender_gid=None):
+    """Up to 3 deduplicated route options between two home nodes.
+
+    When sender_gid is given, chokepoints that group owns are treated as free.
+    """
     if src == dst:
-        return [_route_info(mode, [src, src], 'route_fast', local=True)]
+        return [_route_info(mode, [src, src], 'route_fast', local=True, sender_gid=sender_gid)]
     adj = _adj(mode)
     fee = cfg('fee_per_unit')
-    tolled = frozenset(n for n in _nodes(mode) if _toll(n) > 0)
+    tolled = frozenset(n for n in _nodes(mode) if _toll_for(n, sender_gid) > 0)
     candidates = []
     r = _dijkstra(adj, src, dst)
     if r:
@@ -715,7 +786,8 @@ def find_routes(mode, src, dst):
     if r:
         candidates.append((r[1], 'route_free'))
     # money cost dominates, travel units break ties (units are far below 1000)
-    r = _dijkstra(adj, src, dst, cost_fn=lambda u, v, w: (w * fee + _toll(v)) * 1000 + w)
+    r = _dijkstra(adj, src, dst,
+                  cost_fn=lambda u, v, w: (w * fee + _toll_for(v, sender_gid)) * 1000 + w)
     if r:
         candidates.append((r[1], 'route_cheap'))
     out, seen = [], set()
@@ -724,7 +796,7 @@ def find_routes(mode, src, dst):
         if key in seen:
             continue
         seen.add(key)
-        out.append(_route_info(mode, path, label))
+        out.append(_route_info(mode, path, label, sender_gid=sender_gid))
     return out
 
 
@@ -826,6 +898,12 @@ def handle_callback(call):
             _config_menu(call, int(parts[2]))
         elif op == 'ck':
             _ask_cfg(call, parts[2])
+        elif op == 'ow':
+            _owner_list(call, int(parts[2]))
+        elif op == 'on':
+            _owner_pick_group(call, parts[2])
+        elif op == 'og':
+            _owner_set(call, parts[2], int(parts[3]))
         else:
             _answer(call, _t('err_generic'))
     except Exception:
@@ -1080,7 +1158,7 @@ def _vehicles_done(call):
         _answer(call)
         _bot.send_message(c['chat_id'], _t('need_home', mode=_mode_name(mode)))
         return
-    routes = find_routes(mode, src_row[home_col], dst_row[home_col])
+    routes = find_routes(mode, src_row[home_col], dst_row[home_col], sender_gid=c['chat_id'])
     if not routes:
         _answer(call)
         _bot.send_message(c['chat_id'], _t('no_route'))
@@ -1158,11 +1236,11 @@ def _confirm_send(call):
     cur = _exec(
         """INSERT INTO trades (sender_group_id, sender_user_id, receiver_group_id,
                                receiver_user_id, mode, goods, vehicles, route,
-                               leg_minutes, fee_paid, status, offered_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offered', ?)""",
+                               leg_minutes, tolls, fee_paid, status, offered_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offered', ?)""",
         (c['chat_id'], user_id, c['dest'], receiver['user_id'], c['mode'],
          json.dumps(c['goods']), json.dumps(c['vehicles']), json.dumps(r['path']),
-         json.dumps(r['leg_minutes']), fee, now))
+         json.dumps(r['leg_minutes']), json.dumps(r['tolls']), fee, now))
     tid = cur.lastrowid
     trade = _q("SELECT * FROM trades WHERE id=?", (tid,))[0]
 
@@ -1332,7 +1410,15 @@ def _track_text(trade):
         cur_nid = route[leg]
         kind = _node(mode, cur_nid)['kind']
         if kind in ('strait', 'canal', 'pass'):
-            parts.append(_t('track_choke', cur=_node_name(mode, cur_nid)))
+            charged = dict(json.loads(trade['tolls'] or '[]'))
+            owner = _owner_of(cur_nid)
+            if charged.get(cur_nid) and owner:
+                parts.append(_t('track_choke_owned', cur=_node_name(mode, cur_nid),
+                                owner=_esc(_title(owner))))
+            elif charged.get(cur_nid):
+                parts.append(_t('track_choke', cur=_node_name(mode, cur_nid)))
+            else:
+                parts.append(_t('track_pass', cur=_node_name(mode, cur_nid)))
         elif kind == 'cape':
             parts.append(_t('track_cape', cur=_node_name(mode, cur_nid)))
         else:
@@ -1359,11 +1445,32 @@ def _edit_tracking(trade):
             pass
 
 
+def _settle_tolls(trade, route, from_leg, to_leg):
+    """Pay the snapshotted tolls for nodes passed in (from_leg, to_leg] to their
+    current owners; tolls on unowned chokepoints stay burned."""
+    charged = dict(json.loads(trade['tolls'] or '[]'))
+    for nid in route[from_leg + 1:to_leg + 1]:
+        amount = charged.get(nid)
+        if not amount:
+            continue
+        owner = _owner_of(nid)
+        if not owner:
+            continue
+        _give(owner, {'money': amount})
+        try:
+            _bot.send_message(owner,
+                              _t('toll_income', amount=amount, tid=trade['id'],
+                                 node=_node_name(trade['mode'], nid)))
+        except Exception:
+            pass
+
+
 def _arrive(trade):
+    """Deliver an active trade. Returns True if this call actually delivered it."""
     with _lock:
         cur = _get_trade(trade['id'])
         if not cur or cur['status'] != 'active':
-            return
+            return False
         route = json.loads(cur['route'])
         _exec("UPDATE trades SET status='delivered', leg=?, next_eta=NULL WHERE id=?",
               (len(route) - 1, trade['id']))
@@ -1387,6 +1494,7 @@ def _arrive(trade):
                           parse_mode='HTML')
     except Exception:
         pass
+    return True
 
 
 def _tick():
@@ -1414,7 +1522,8 @@ def _tick():
     for trade in active:
         route = json.loads(trade['route'])
         legs = json.loads(trade['leg_minutes'])
-        leg = trade['leg']
+        old_leg = trade['leg']
+        leg = old_leg
         eta = trade['next_eta']
         arrived = False
         while eta <= now:
@@ -1424,10 +1533,13 @@ def _tick():
                 break
             eta += legs[leg] * 60
         if arrived:
-            _arrive(trade)
+            if _arrive(trade):
+                _settle_tolls(trade, route, old_leg, len(route) - 1)
         else:
-            _exec("UPDATE trades SET leg=?, next_eta=? WHERE id=? AND status='active'",
-                  (leg, eta, trade['id']))
+            cur = _exec("UPDATE trades SET leg=?, next_eta=? WHERE id=? AND status='active'",
+                        (leg, eta, trade['id']))
+            if cur.rowcount:
+                _settle_tolls(trade, route, old_leg, leg)
             trade = _get_trade(trade['id'])
             if trade and trade['status'] == 'active':
                 _edit_tracking(trade)
@@ -1460,6 +1572,7 @@ def _admin_menu(call):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(_t('btn_home_sea'), callback_data='trd:hm:s'),
                types.InlineKeyboardButton(_t('btn_home_land'), callback_data='trd:hm:l'),
+               types.InlineKeyboardButton(_t('btn_owners'), callback_data='trd:ow:0'),
                types.InlineKeyboardButton(_t('btn_cfg'), callback_data='trd:cfg:0'))
     _bot.send_message(call.message.chat.id, _t('adm_title'), reply_markup=markup)
     _answer(call)
@@ -1511,6 +1624,73 @@ def _home_set(call, mcode, gid, nid):
                       _t('home_set', mode=_mode_name(mode), g=_esc(_title(gid)),
                          node=_node_name(mode, nid)),
                       parse_mode='HTML')
+
+
+def _chokepoints():
+    """All tolled chokepoint node ids, sea first then land."""
+    out = [nid for nid, n in SEA_NODES.items() if n['kind'] in ('strait', 'canal')]
+    out += [nid for nid, n in LAND_NODES.items() if n['kind'] == 'pass']
+    return out
+
+
+OWN_PAGE_SIZE = 8
+
+
+def _owner_list(call, page):
+    if not _require_admin(call):
+        return
+    nids = _chokepoints()
+    pages = (len(nids) + OWN_PAGE_SIZE - 1) // OWN_PAGE_SIZE
+    page = max(0, min(page, pages - 1))
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for nid in nids[page * OWN_PAGE_SIZE:(page + 1) * OWN_PAGE_SIZE]:
+        owner = _owner_of(nid)
+        owner_label = _title(owner) if owner else _t('own_unowned')
+        markup.add(types.InlineKeyboardButton(
+            f"{_node_name(_mode_of_node(nid), nid)} — {owner_label}",
+            callback_data=f'trd:on:{nid}'))
+    nav = []
+    if page > 0:
+        nav.append(types.InlineKeyboardButton(_t('btn_prev'), callback_data=f'trd:ow:{page - 1}'))
+    if page < pages - 1:
+        nav.append(types.InlineKeyboardButton(_t('btn_next'), callback_data=f'trd:ow:{page + 1}'))
+    if nav:
+        markup.add(*nav)
+    _bot.send_message(call.message.chat.id, _t('own_title', p=page + 1), reply_markup=markup)
+    _answer(call)
+
+
+def _owner_pick_group(call, nid):
+    if not _require_admin(call):
+        return
+    if nid not in _chokepoints():
+        _answer(call, _t('err_generic'))
+        return
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for g in _q("SELECT DISTINCT group_id FROM users"):
+        markup.add(types.InlineKeyboardButton(_title(g['group_id']),
+                                              callback_data=f"trd:og:{nid}:{g['group_id']}"))
+    markup.add(types.InlineKeyboardButton(_t('btn_no_owner'), callback_data=f'trd:og:{nid}:0'))
+    _bot.send_message(call.message.chat.id,
+                      _t('own_pick', node=_node_name(_mode_of_node(nid), nid)),
+                      reply_markup=markup)
+    _answer(call)
+
+
+def _owner_set(call, nid, gid):
+    if not _require_admin(call):
+        return
+    if nid not in _chokepoints():
+        _answer(call, _t('err_generic'))
+        return
+    _set_owner(nid, gid)
+    node = _node_name(_mode_of_node(nid), nid)
+    _answer(call)
+    if gid:
+        _bot.send_message(call.message.chat.id,
+                          _t('own_set', node=node, g=_esc(_title(gid))), parse_mode='HTML')
+    else:
+        _bot.send_message(call.message.chat.id, _t('own_cleared', node=node))
 
 
 CFG_PAGE_SIZE = 10
