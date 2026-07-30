@@ -134,6 +134,84 @@ class EntrypointTest(unittest.TestCase):
         self.assertIn('ph', ops['main.py'], 'the photo screen must stay admin-reachable')
 
 
+class PanelEntryTest(unittest.TestCase):
+    """/start opens the menu everywhere, and the bare word "panel" is its alias."""
+
+    # One build per language for the whole class: every extra load leaves a
+    # trade ticker running against the same sqlite file.
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        cls.builds = {}
+        for filename in ENTRYPOINTS:
+            module, bot = load_entrypoint(filename, cls.dir.name)
+            # The three builds share one sqlite file, so the lord is inserted once.
+            module.cursor.execute("INSERT OR IGNORE INTO users (user_id, group_id) VALUES (?, ?)",
+                                  (7, -1))
+            module.conn.commit()
+            cls.builds[filename] = (module, bot)
+
+    @classmethod
+    def tearDownClass(cls):
+        for module, _ in cls.builds.values():
+            module.conn.close()
+        cls.dir.cleanup()
+
+    def load(self, filename):
+        module, bot = self.builds[filename]
+        for record in (bot.sent, bot.replies, bot.markups):
+            record.clear()
+        return module, bot
+
+    @staticmethod
+    def menu_buttons(bot):
+        return [button.callback_data for row in bot.markups[-1].keyboard for button in row]
+
+    def test_start_in_private_opens_the_menu(self):
+        for filename in ENTRYPOINTS:
+            with self.subTest(filename):
+                module, bot = self.load(filename)
+                module.start(Message(Chat(7, chat_type='private'), User(7), text='/start'))
+                self.assertEqual([chat for chat, _ in bot.sent], [7])
+                self.assertIn('assets', self.menu_buttons(bot))
+                self.assertEqual(bot.replies, [], 'no "groups only" brush-off any more')
+
+    def test_start_in_a_group_still_shows_the_menu(self):
+        for filename in ENTRYPOINTS:
+            with self.subTest(filename):
+                module, bot = self.load(filename)
+                module.start(Message(Chat(-1), User(7), text='/start'))
+                self.assertEqual([chat for chat, _ in bot.sent], [-1])
+                self.assertIn('assets', self.menu_buttons(bot))
+
+    def test_the_word_panel_does_exactly_what_start_does(self):
+        for filename in ENTRYPOINTS:
+            with self.subTest(filename):
+                module, bot = self.load(filename)
+                for word in module.PANEL_WORDS:
+                    message = Message(Chat(-1), User(7), text=f'  {word.upper()} ')
+                    self.assertTrue(module.is_panel_word(message), word)
+                    module.panel_word(message)
+                    self.assertIn('assets', self.menu_buttons(bot))
+                self.assertEqual(len(bot.sent), len(module.PANEL_WORDS))
+
+    def test_the_word_works_for_an_admin_too(self):
+        module, bot = self.load('main.py')
+        module.cursor.execute("INSERT OR IGNORE INTO users (user_id, group_id) VALUES (?, ?)",
+                              (4242, -1))
+        module.conn.commit()
+        module.panel_word(Message(Chat(-1), User(4242), text='panel'))
+        self.assertIn('ap:home', self.menu_buttons(bot), 'admins still get the panel button')
+
+    def test_ordinary_chatter_is_not_a_panel_word(self):
+        for filename in ENTRYPOINTS:
+            with self.subTest(filename):
+                module, _ = self.load(filename)
+                for text in ('panel of judges', '/start', 'panels', '', None):
+                    message = Message(Chat(-1), User(7), text=text)
+                    self.assertFalse(module.is_panel_word(message), repr(text))
+
+
 class MenuKeyboardTest(unittest.TestCase):
     """send_main_menu builds its keyboard from the feature toggles."""
 

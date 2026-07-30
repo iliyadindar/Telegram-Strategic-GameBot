@@ -219,8 +219,10 @@ BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-tr.py
 | Komut | Açıklama |
 |---|---|
 | `/setlord` | **Yalnızca yönetici.** Bir oyuncunun mesajını yanıtlayarak onu o grubun lordu yapın |
-| `/start` | Ana menüyü açın ve oynamaya başlayın |
+| `/start` | Ana menüyü açın ve oynamaya başlayın — grupta veya özel sohbette |
 | `/admin` | Yönetim panelini açın — grupta veya özel sohbette *(yalnızca yönetici)* |
+| `panel` / `menü` | Tek başına bu kelime tam olarak `/start` ile aynı işi yapar, eğik çizgiye gerek yok |
+| `panel` | Tek başına bu kelime de paneli açar, eğik çizgiye gerek yok *(yalnızca yönetici; diğerleri için yok sayılır)* |
 
 ### Menü Seçenekleri
 

@@ -234,8 +234,9 @@ BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-en.py
 | Command | Description |
 |---|---|
 | `/setlord` | **Admin only.** Reply to a player's message with this to make them the lord of that group |
-| `/start` | Open the main menu and start playing |
+| `/start` | Open the main menu and start playing — in a group or in private chat |
 | `/admin` | Open the admin dashboard — works in a group or in private chat *(admin only)* |
+| `panel` / `menu` | The bare word does exactly what `/start` does — no slash needed |
 
 ### Menu Options
 

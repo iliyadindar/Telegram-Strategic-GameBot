@@ -98,10 +98,6 @@ attack_type_labels = {
 }
 
 
-def is_group_chat(message):
-    return message.chat.type in ['supergroup']
-
-
 @bot.message_handler(commands=['setlord'])
 def set_lord(message):
     # A lord is appointed by an admin replying to that player's message.
@@ -149,11 +145,23 @@ def send_main_menu(chat_id, user_id):
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    if is_group_chat(message):
-        send_main_menu(message.chat.id, message.from_user.id)
-    else:
-        bot.reply_to(message, "Bu bot yalnızca gruplarda kullanılabilir. "
-                              "Yöneticiler burada /admin kullanabilir.")
+    # The menu works in the group and in private chat alike; every button
+    # re-checks the tapper, so nothing is unlocked by opening it privately.
+    send_main_menu(message.chat.id, message.from_user.id)
+
+
+# Typing the word on its own is a plain alias for /start, so nobody has to
+# remember the command.
+PANEL_WORDS = ('panel', 'menü')
+
+
+def is_panel_word(message):
+    return (message.text or '').strip().lower() in PANEL_WORDS
+
+
+@bot.message_handler(func=is_panel_word)
+def panel_word(message):
+    send_main_menu(message.chat.id, message.from_user.id)
 
 
 def ask_for_private_message(message, user_id):
