@@ -19,6 +19,7 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 
 - [Özellikler](#-özellikler)
 - [Oyun Mekanikleri](#-oyun-mekanikleri)
+- [Yönetim Paneli](#️-yönetim-paneli)
 - [Başlarken](#-başlarken)
   - [Gereksinimler](#gereksinimler)
   - [Kurulum](#kurulum)
@@ -26,6 +27,7 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 - [Kullanım](#-kullanım)
   - [Komutlar](#komutlar)
   - [Menü Seçenekleri](#menü-seçenekleri)
+- [Testler](#-testler)
 - [Proje Yapısı](#-proje-yapısı)
 - [Katkıda Bulunma](#-katkıda-bulunma)
 - [Lisans](#-lisans)
@@ -45,6 +47,7 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 | 💬 **Oyun İçi İletişim** | Gruplar arası özel mesaj gönderme ve kanala bildiri yayınlama |
 | 🛡️ **Saldırı ve Savunma** | Detaylı saldırı takibi ile askeri seferleri planlama ve kaydetme |
 | 🚢 **Dünya Ticareti** | Okyanuslar, boğazlar, kanallar ve İpek Yolu geçitlerinden oluşan dünya haritasında deniz ve kara yoluyla diğer lordlara mal gönderme — rota seçimi, geçiş ücretleri, boğaz sahipliği ve canlı sevkiyat takibi |
+| 🛡️ **Yönetim Paneli** | Satır içi `/admin` paneli: oyuncu ve dünya istatistikleri, ekonomi ve askeri özetler, bölüm başına aç/kapat anahtarları, yönetici işlem kaydı, ek yöneticiler, ülke sıfırlama ve sefer/ticaret fotoğrafları |
 | 🔧 **Yönetici Kontrolleri** | Varlık değerlerini ayarlama, haftalık güncellemeleri tetikleme ve konumlar, boğaz sahipliği ile ticaret ayarlarını yönetme |
 
 ---
@@ -78,6 +81,35 @@ Lordlar, tamamen cam düğmelerle, iki dünya haritası üzerinden birbirleriyle
 - **Canlı takip** — bot sevkiyatı gerçek zamanlı ilerletir ve her ara noktada takip mesajını düzenler ("sevkiyat Süveyş Kanalı geçişini tamamladı — ücret ödendi"); kalkış ve varışlar oyun kanalına duyurulur.
 - **Boğaz sahipliği** 🪙 — yönetici herhangi bir boğaz, kanal veya geçidin sahipliğini bir gruba verebilir: geçiş ücretleri o grubun hazinesine gider ve kendi sevkiyatları ücretsiz geçer. Sahipsiz geçişlerin ücretleri yakılır.
 - **Yönetici ayarları** — her grubun deniz/kara konumu ile tüm hız, ücret, geçiş ve kapasite değerleri oyun içinden düzenlenebilir.
+- **Ticaret fotoğrafı** 🖼 — bir yönetici ticaret mesajlarına fotoğraf ekleyebilir; teklif kartı, canlı takip mesajı ve kanal duyuruları o zaman altyazılı fotoğraf olarak gönderilir. Telegram'ın 1024 karakterlik altyazı sınırını aşan metinler otomatik olarak düz metne döner.
+
+---
+
+## 🛡️ Yönetim Paneli
+
+Paneli açmak için bir grupta **veya** botun özel sohbetinde `/admin` gönderin. Her düğme kime dokunulduğunu yeniden denetler; bu yüzden grupta açık bırakılmış bir panel yönetici olmayanların işine yaramaz.
+
+| Ekran | İşlevi |
+|---|---|
+| 📊 **İstatistikler** | Grup ve lord sayıları, toplam servet, toplam asker, toplam bina ve ticaret durumu (etkin / bekleyen / tamamlanan) |
+| 💰 **Ekonomi** | Kaynak başına dünya toplamları ve en zengin grup; gruba göre ayrıntıya inilebilir |
+| ⚔️ **Askeri durum** | Birim türüne göre dünya toplamları ve en güçlü ordu; gruba göre ayrıntıya inilebilir |
+| ⚙️ **Bölümleri aç/kapat** | Her bölüm için bir anahtar — varlıklar, yükseltme, bildiri, özel mesaj, antlaşma, sefer, ticaret, haftalık güncelleme, lord kaydı. Kapatılan bölüm hem `/start` menüsünden kalkar hem de düğmeleri reddedilir; böylece eski bir menüyle atlatılamaz |
+| 🧾 **İşlem kaydı** | Her yönetici değişikliği — kim, ne, ne zaman — en yeniden eskiye, sayfa başına 10 kayıt |
+| 👑 **Yöneticiler** | *(yalnızca sahip)* Kullanıcının bir mesajını ileterek ya da sayısal kimliğini göndererek yönetici ekleyin ve tekrar çıkarın. Yapılandırmadaki sahip her zaman yöneticidir ve çıkarılamaz |
+| ♻️ **Ülkeyi sıfırla** | Bir grubun kaynaklarını, askerlerini ve binalarını onay adımının ardından başlangıç değerlerine döndürür. Antlaşmalar ve ticaret konumları değişmez; önceki değerler işlem kaydına yazılır |
+| 🖼 **Ticaret fotoğrafı** | Ticaret mesajlarında kullanılan fotoğrafı ayarlayın veya kaldırın |
+| 🖼 **Savaş fotoğrafları** | Kara ve deniz seferi duyuruları için ayrı fotoğraflar ayarlayın veya kaldırın |
+| 🌍 **Ticaret yönetimi** | Mevcut ticaret yönetimi ekranları — konumlar, boğaz sahipliği, ticaret ayarları |
+| 🎮 **Oyun menüsü** | Panelden çıkmadan normal oyuncu menüsünü açar |
+
+### Lord atama
+
+Oyuncular artık kendilerini kaydedemez. Bir yönetici grupta **oyuncunun mesajını yanıtlar** ve `/setlord` gönderir; bot gönderenin yönetici olduğunu doğrular ve yanıtlanan kullanıcıyı o grubun lordu olarak kaydeder.
+
+### Seferler ve savaş kanalı
+
+Genel sefer duyuruları **savaş kanalına** (`WAR_CHANNEL_ID`) gider ve yalnızca komutanı, çıkış noktasını, hedefi ve varış zamanını içerir. Oyuncunun yazdığı ordu bilgileri dahil tam rapor, sahibe ve tüm yöneticilere özel olarak gönderilir.
 
 ---
 
@@ -106,21 +138,39 @@ Lordlar, tamamen cam düğmelerle, iki dünya haritası üzerinden birbirleriyle
 
 ### Yapılandırma
 
-Dil dosyanızı seçin — `main.py` (Farsça), `main-en.py` (İngilizce) veya `main-tr.py` (Türkçe) — ve dosyanın başındaki aşağıdaki değerleri güncelleyin:
-
-```python
-API_TOKEN = 'YOUR_TELEGRAM_BOT_API_TOKEN'
-ADMIN_ID = 123456789          # Telegram kullanıcı kimliğiniz
-CHANNEL_ID = "@your_channel"  # Telegram kanal kullanıcı adınız
-```
-
-Ardından seçtiğiniz dilde botu başlatın:
+**Hiçbir değer koda gömülmez.** Botu başlatın ve sorulduğunda değerleri terminale yapıştırın:
 
 ```bash
 python main-tr.py   # Türkçe  (veya: Farsça için python main.py, İngilizce için python main-en.py)
 ```
 
-> SQLite veritabanı (`game_bot.db`) ilk çalıştırmada otomatik olarak oluşturulur.
+```
+=== Bot yapılandırması ===
+Bu değerler bir kez sorulur ve bot_config.json içinde saklanır.
+(Bu dosya .gitignore içindedir — asla commit etmeyin.)
+
+Bot jetonu (@BotFather'dan): 123456:ABC-DEF...
+Sahip sayısal kullanıcı kimliği (@userinfobot'tan): 123456789
+Haber kanalı kimliği (örn. @mychannel veya -100…): @your_channel
+Savaş kanalı kimliği (haber kanalını kullanmak için boş bırakın): @your_war_channel
+```
+
+Yanıtlar `bot_config.json` dosyasına yazılır, böylece sonraki çalıştırmalar sessizce başlar. Her değer şu sırayla çözümlenir:
+
+| Ayar | Ortam değişkeni | Amaç |
+|---|---|---|
+| Bot jetonu | `BOT_TOKEN` | [@BotFather](https://t.me/BotFather)'dan |
+| Sahip kimliği | `ADMIN_ID` | Kalıcı sahip; panelden başka yöneticiler ekleyebilir |
+| Haber kanalı | `CHANNEL_ID` | Bildiriler ve ticaret duyuruları |
+| Savaş kanalı | `WAR_CHANNEL_ID` | Sefer duyuruları. Boş bırakılırsa haber kanalı kullanılır |
+
+Sıra: **ortam değişkeni → `bot_config.json` → terminal sorusu.** Ortam değişkenleri her zaman önceliklidir; bu yüzden bir sunucu kurulumunda dosyaya hiç gerek kalmaz:
+
+```bash
+BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-tr.py
+```
+
+> SQLite veritabanı (`game_bot.db`) ilk çalıştırmada otomatik olarak oluşturulur; mevcut veritabanları yükseltme sırasında yerinde taşınır.
 
 ---
 
@@ -130,8 +180,9 @@ python main-tr.py   # Türkçe  (veya: Farsça için python main.py, İngilizce 
 
 | Komut | Açıklama |
 |---|---|
-| `/setlord` | Mevcut grupta lord olarak kayıt olun |
+| `/setlord` | **Yalnızca yönetici.** Bir oyuncunun mesajını yanıtlayarak onu o grubun lordu yapın |
 | `/start` | Ana menüyü açın ve oynamaya başlayın |
+| `/admin` | Yönetim panelini açın — grupta veya özel sohbette *(yalnızca yönetici)* |
 
 ### Menü Seçenekleri
 
@@ -144,9 +195,25 @@ python main-tr.py   # Türkçe  (veya: Farsça için python main.py, İngilizce 
 | 📜 **Antlaşma** | Diğer oyuncularla antlaşma oluşturun, gönderin veya onaylayın |
 | ⚔️ **Askeri Sefer** | Saldırı detaylarını planlayın ve kaydedin |
 | 🚢 **Dünya Ticareti** | Deniz veya kara yoluyla diğer lordlara ticaret sevkiyatı gönderin |
+| 🛡️ **Yönetim Paneli** | Yönetim panelini açın *(yalnızca yönetici)* |
 | 🔨 **Haftalık Güncelleme** | Haftalık fabrika çıktılarını toplayın *(yalnızca yönetici)* |
 | 🛠️ **Varlık Ayarı** | Varlık değerlerini ayarlayın *(yalnızca yönetici)* |
 | 🌍 **Ticaret Yönetimi** | Konumları, boğaz sahipliğini ve ticaret ayarlarını yönetin *(yalnızca yönetici)* |
+
+> Yönetim panelinden kapatılmış bir bölüme ait düğme menüde hiç görünmez.
+
+---
+
+## 🧪 Testler
+
+Test paketi çevrimdışı çalışır — bellek içi bir veritabanı ve sahte bir Telegram istemcisi kullanır, jetona gerek yoktur:
+
+```bash
+cd tests
+python -m unittest discover -s . -t .
+```
+
+Yapılandırma çözümlemesini, erişim denetimini, bölüm anahtarlarını, işlem kaydını, istatistikleri, ülke sıfırlamayı, lord atamayı, sağdan sola ok yönünü, fotoğraf işlemeyi ve üç giriş dosyasının uçtan uca yüklenmesini kapsar.
 
 ---
 
@@ -154,15 +221,19 @@ python main-tr.py   # Türkçe  (veya: Farsça için python main.py, İngilizce 
 
 ```
 Telegram-Strategic-GameBot/
-├── main.py          # Bot (Farsça) — mantık, işleyiciler ve veritabanı kurulumu
-├── main-en.py       # Bot (İngilizce) — aynı mantık, İngilizce arayüz
-├── main-tr.py       # Bot (Türkçe) — aynı mantık, Türkçe arayüz
-├── trade_system.py  # Üç botun paylaştığı dünya ticareti motoru (dünya haritası, rotalama, geçiş ücretleri, canlı takip)
-├── LICENSE          # MIT Lisansı
-├── SECURITY.md      # Güvenlik politikası
-├── README.md        # Proje dokümantasyonu (İngilizce)
-├── README_FA.md     # Proje dokümantasyonu (Farsça)
-└── README_TR.md     # Proje dokümantasyonu (Türkçe)
+├── main.py           # Bot (Farsça) — mantık, işleyiciler ve veritabanı kurulumu
+├── main-en.py        # Bot (İngilizce) — aynı mantık, İngilizce arayüz
+├── main-tr.py        # Bot (Türkçe) — aynı mantık, Türkçe arayüz
+├── bot_config.py     # Jeton / sahip / kanal kimlikleri: ortam → bot_config.json → terminal sorusu
+├── admin_panel.py    # Satır içi /admin paneli: erişim, istatistik, anahtarlar, kayıt, sıfırlama
+├── admin_strings.py  # Varlık sütunu bilgileri ve panelin üç dildeki metinleri
+├── trade_system.py   # Üç botun paylaştığı dünya ticareti motoru (dünya haritası, rotalama, geçiş ücretleri, canlı takip)
+├── tests/            # Çevrimdışı test paketi (sahte bot + bellek içi SQLite)
+├── LICENSE           # MIT Lisansı
+├── SECURITY.md       # Güvenlik politikası
+├── README.md         # Proje dokümantasyonu (İngilizce)
+├── README_FA.md      # Proje dokümantasyonu (Farsça)
+└── README_TR.md      # Proje dokümantasyonu (Türkçe)
 ```
 
 ---

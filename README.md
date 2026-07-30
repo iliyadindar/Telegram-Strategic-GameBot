@@ -19,6 +19,7 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 
 - [Features](#-features)
 - [Game Mechanics](#-game-mechanics)
+- [Admin Dashboard](#-admin-dashboard)
 - [Bot Language](#-bot-language)
 - [Getting Started](#-getting-started)
   - [Prerequisites](#prerequisites)
@@ -27,6 +28,7 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 - [Usage](#-usage)
   - [Commands](#commands)
   - [Menu Options](#menu-options)
+- [Testing](#-testing)
 - [Project Structure](#-project-structure)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -46,6 +48,7 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 | 💬 **In-Game Communication** | Send private messages between groups and publish statements to channels |
 | 🛡️ **Attack & Defense** | Plan and record military campaigns with detailed attack tracking |
 | 🚢 **World Trade** | Send goods to other lords by sea or land across a world map of oceans, straits, canals and Silk-Road passes — route choice, tolls, chokepoint ownership, and live convoy tracking |
+| 🛡️ **Admin Dashboard** | An inline `/admin` panel: player and world statistics, economy and military overviews, per-feature on/off switches, an admin action log, extra admins, country reset, and campaign/trade photos |
 | 🔧 **Admin Controls** | Adjust asset values, trigger weekly updates, and manage trade locations, chokepoint owners, and trade settings |
 
 ---
@@ -79,6 +82,35 @@ Lords trade resources with each other across two world-map graphs, entirely thro
 - **Live tracking** — a background ticker moves convoys in real time and edits the tracking message at every waypoint ("the shipment passed the Suez Canal — toll paid"), announcing departures and arrivals to the game channel.
 - **Chokepoint ownership** 🪙 — the admin can grant a group ownership of any strait, canal or pass: passage tolls are then paid into that group's treasury, and its own convoys pass free. Tolls on unowned chokepoints are burned.
 - **Admin tuning** — each group's sea/land home location plus every speed, fee, toll and capacity value is editable in-game from the trade admin panel.
+- **Trade photo** 🖼 — an admin can attach a photo to trade messages; the offer card, the live tracking message and the channel announcements are then sent as photos with captions. Bodies longer than Telegram's 1024-character caption limit fall back to plain text automatically.
+
+---
+
+## 🛡️ Admin Dashboard
+
+Send `/admin` in a group **or** in the bot's private chat to open the dashboard. Every button re-checks who tapped it, so a panel left open in a group is useless to non-admins.
+
+| Screen | What it does |
+|---|---|
+| 📊 **Statistics** | Group and lord counts, total wealth, total troops, total buildings, and trade activity (active / pending / completed) |
+| 💰 **Economy** | World totals per resource plus the richest group; drills down to a per-group card |
+| ⚔️ **Military** | World totals per unit type plus the strongest army; drills down to a per-group card |
+| ⚙️ **Enable/disable sections** | One switch per feature — assets, upgrade, statement, private message, treaty, campaign, trade, weekly update, lord registration. A disabled section vanishes from the `/start` menu **and** its callbacks are refused, so an old open menu cannot be used to get around it |
+| 🧾 **Action log** | Every admin change — who, what, when — newest first, 10 per page |
+| 👑 **Admins** | *(owner only)* Promote extra admins by forwarding one of their messages or sending their numeric id, and demote them again. The owner from the configuration is always an admin and cannot be removed |
+| ♻️ **Reset a country** | Return one group's resources, troops and buildings to their starting values, behind a confirmation step. Treaties and trade locations are left alone, and the previous values are written to the action log |
+| 🖼 **Trade photo** | Set or clear the photo used on trade messages |
+| 🖼 **War photos** | Set or clear separate photos for land and sea campaign announcements |
+| 🌍 **Trade administration** | The existing trade admin screens — home locations, chokepoint owners, trade settings |
+| 🎮 **Game menu** | Opens the normal player menu without leaving the panel |
+
+### Appointing lords
+
+Players can no longer register themselves. An admin **replies to the player's message** in the group and sends `/setlord`; the bot verifies the sender is an admin and registers the replied-to user as that group's lord.
+
+### Campaigns and the war channel
+
+Public campaign announcements go to the **war channel** (`WAR_CHANNEL_ID`) and carry only the commander, origin, destination and arrival time. The full report, including the army details the player typed, is sent privately to the owner and every admin.
 
 ---
 
@@ -121,21 +153,39 @@ The bot's in-game interface — buttons, prompts, resource names, and channel an
 
 ### Configuration
 
-Choose your language file — `main.py` (Persian), `main-en.py` (English), or `main-tr.py` (Turkish) — and update the following values at the top of it:
-
-```python
-API_TOKEN = 'YOUR_TELEGRAM_BOT_API_TOKEN'
-ADMIN_ID = 123456789          # Your Telegram user ID
-CHANNEL_ID = "@your_channel"  # Your Telegram channel username
-```
-
-Then start the bot with your chosen language:
+**Nothing is hardcoded.** Just start the bot and paste the values when it asks:
 
 ```bash
 python main-en.py   # English  (or: python main.py for Persian, python main-tr.py for Turkish)
 ```
 
-> The SQLite database (`game_bot.db`) is created automatically on the first run.
+```
+=== Bot configuration ===
+These values are asked once and stored in bot_config.json.
+(That file is gitignored — never commit it.)
+
+Bot token (from @BotFather): 123456:ABC-DEF...
+Owner numeric user id (from @userinfobot): 123456789
+News channel id (e.g. @mychannel or -100…): @your_channel
+War channel id (leave blank to reuse the news channel): @your_war_channel
+```
+
+Answers are written to `bot_config.json`, so later runs start silently. Each value is resolved in this order:
+
+| Setting | Environment variable | Purpose |
+|---|---|---|
+| Bot token | `BOT_TOKEN` | From [@BotFather](https://t.me/BotFather) |
+| Owner id | `ADMIN_ID` | The permanent owner; can promote other admins from the panel |
+| News channel | `CHANNEL_ID` | Statements and trade announcements |
+| War channel | `WAR_CHANNEL_ID` | Campaign announcements. Blank reuses the news channel |
+
+**environment variable → `bot_config.json` → prompt.** Environment variables always win, so a server deployment never needs the file:
+
+```bash
+BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-en.py
+```
+
+> The SQLite database (`game_bot.db`) is created automatically on the first run, and existing databases are migrated in place — no manual steps when upgrading.
 
 ---
 
@@ -145,8 +195,9 @@ python main-en.py   # English  (or: python main.py for Persian, python main-tr.p
 
 | Command | Description |
 |---|---|
-| `/setlord` | Register as a lord in the current group |
+| `/setlord` | **Admin only.** Reply to a player's message with this to make them the lord of that group |
 | `/start` | Open the main menu and start playing |
+| `/admin` | Open the admin dashboard — works in a group or in private chat *(admin only)* |
 
 ### Menu Options
 
@@ -159,9 +210,25 @@ python main-en.py   # English  (or: python main.py for Persian, python main-tr.p
 | 📜 **Treaty** | Create, send, or confirm treaties with other players |
 | ⚔️ **Military Campaign** | Plan and record attack details |
 | 🚢 **World Trade** | Send trade convoys to other lords by sea or land |
+| 🛡️ **Admin Panel** | Open the admin dashboard *(admin only)* |
 | 🔨 **Weekly Update** | Collect weekly factory outputs *(admin only)* |
 | 🛠️ **Set Assets** | Adjust asset values *(admin only)* |
 | 🌍 **Trade Admin** | Assign home locations, chokepoint owners and trade settings *(admin only)* |
+
+> Any button whose feature has been switched off in the admin panel is left out of the menu entirely.
+
+---
+
+## 🧪 Testing
+
+The test suite runs offline against an in-memory database and a stub Telegram client — no token needed:
+
+```bash
+cd tests
+python -m unittest discover -s . -t .
+```
+
+It covers configuration resolution, access control, feature toggles, the action log, statistics, country reset, lord appointment, the RTL arrow direction, photo handling, and loads all three entry points end to end.
 
 ---
 
@@ -169,15 +236,19 @@ python main-en.py   # English  (or: python main.py for Persian, python main-tr.p
 
 ```
 Telegram-Strategic-GameBot/
-├── main.py          # Bot (Persian / فارسی) — logic, handlers, and database setup
-├── main-en.py       # Bot (English) — same logic, English interface
-├── main-tr.py       # Bot (Turkish / Türkçe) — same logic, Turkish interface
-├── trade_system.py  # World trade engine shared by all three bots (map graphs, routing, tolls, live tracking)
-├── LICENSE          # MIT License
-├── SECURITY.md      # Security policy
-├── README.md        # Project documentation (English)
-├── README_FA.md     # Project documentation (Persian / فارسی)
-└── README_TR.md     # Project documentation (Turkish / Türkçe)
+├── main.py           # Bot (Persian / فارسی) — logic, handlers, and database setup
+├── main-en.py        # Bot (English) — same logic, English interface
+├── main-tr.py        # Bot (Turkish / Türkçe) — same logic, Turkish interface
+├── bot_config.py     # Token / owner / channel ids: environment → bot_config.json → prompt
+├── admin_panel.py    # Inline /admin dashboard: access, statistics, toggles, log, reset
+├── admin_strings.py  # Asset column metadata and the dashboard's text in all three languages
+├── trade_system.py   # World trade engine shared by all three bots (map graphs, routing, tolls, live tracking)
+├── tests/            # Offline test suite (stub bot + in-memory SQLite)
+├── LICENSE           # MIT License
+├── SECURITY.md       # Security policy
+├── README.md         # Project documentation (English)
+├── README_FA.md      # Project documentation (Persian / فارسی)
+└── README_TR.md      # Project documentation (Turkish / Türkçe)
 ```
 
 ---

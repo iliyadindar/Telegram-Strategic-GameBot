@@ -27,6 +27,8 @@ _conn = None
 _ADMIN = 0
 _CHANNEL = None
 _lang = 'fa'
+_is_admin = None     # set by init(); predicate deciding who reaches trd:adm
+_audit = None        # set by init(); optional (actor_id, action, target, detail) sink
 # RLock: refund/credit helpers are called from code that already holds the lock.
 _lock = threading.RLock()
 _ctx = {}            # per-user wizard state (in-memory; nothing escrowed before confirm)
@@ -305,11 +307,27 @@ STRINGS = {
         'cfg_title': "⚙️ تنظیمات تجارت (صفحه {p}) — برای تغییر روی هر مورد بزنید:",
         'cfg_ask': "مقدار جدید برای {key} را وارد کنید (فعلی: {val}):",
         'cfg_set': "✅ {key} روی {val} تنظیم شد.",
-        'btn_prev': "⬅️ قبلی",
-        'btn_next': "بعدی ➡️",
+        # RTL: the leading glyph renders on the right, so "previous" points
+        # right and "next" points left — mirrored from the LTR languages.
+        'btn_prev': "➡️ قبلی",
+        'btn_next': "بعدی ⬅️",
+        # Route separator. Persian paragraphs run right-to-left, so a route
+        # reads correctly only with a left-pointing arrow between the stops.
+        'path_arrow': " ← ",
         'dur_hm': "{h} ساعت و {m} دقیقه",
         'dur_m': "{m} دقیقه",
         'wizard_cancelled': "🚫 تجارت لغو شد.",
+        'btn_photo': "🖼 عکس تجارت",
+        'ph_title': "🖼 عکس پیام‌های تجارت — وضعیت فعلی: {state}\n"
+                    "این عکس روی پیشنهاد تجارت، پیام رهگیری محموله و اعلان‌های کانال قرار می‌گیرد.",
+        'ph_set': "تنظیم شده",
+        'ph_unset': "تنظیم نشده",
+        'btn_ph_set': "📷 تنظیم عکس",
+        'btn_ph_clear': "🗑 حذف عکس",
+        'ph_ask': "اکنون عکس مورد نظر را بفرستید:",
+        'ph_saved': "✅ عکس تجارت ذخیره شد.",
+        'ph_cleared': "🗑 عکس تجارت حذف شد؛ پیام‌ها دوباره متنی می‌شوند.",
+        'ph_not_photo': "این پیام عکس نیست؛ عملیات لغو شد.",
     },
     'en': {
         'err_generic': "Something went wrong. Please try again.",
@@ -397,9 +415,22 @@ STRINGS = {
         'cfg_set': "✅ {key} was set to {val}.",
         'btn_prev': "⬅️ Prev",
         'btn_next': "Next ➡️",
+        'path_arrow': " → ",
         'dur_hm': "{h}h {m}m",
         'dur_m': "{m} minutes",
         'wizard_cancelled': "🚫 Trade cancelled.",
+        'btn_photo': "🖼 Trade photo",
+        'ph_title': "🖼 Photo for trade messages — currently: {state}\n"
+                    "It is attached to the trade offer, the convoy tracking message "
+                    "and the channel announcements.",
+        'ph_set': "set",
+        'ph_unset': "not set",
+        'btn_ph_set': "📷 Set photo",
+        'btn_ph_clear': "🗑 Remove photo",
+        'ph_ask': "Send the photo now:",
+        'ph_saved': "✅ The trade photo was saved.",
+        'ph_cleared': "🗑 The trade photo was removed; messages go back to plain text.",
+        'ph_not_photo': "That message is not a photo; the operation was cancelled.",
     },
     'tr': {
         'err_generic': "Bir hata oluştu. Lütfen tekrar deneyin.",
@@ -487,9 +518,21 @@ STRINGS = {
         'cfg_set': "✅ {key} değeri {val} olarak ayarlandı.",
         'btn_prev': "⬅️ Önceki",
         'btn_next': "Sonraki ➡️",
+        'path_arrow': " → ",
         'dur_hm': "{h} sa {m} dk",
         'dur_m': "{m} dakika",
         'wizard_cancelled': "🚫 Ticaret iptal edildi.",
+        'btn_photo': "🖼 Ticaret fotoğrafı",
+        'ph_title': "🖼 Ticaret mesajlarının fotoğrafı — şu an: {state}\n"
+                    "Ticaret teklifine, konvoy takip mesajına ve kanal duyurularına eklenir.",
+        'ph_set': "ayarlandı",
+        'ph_unset': "ayarlanmadı",
+        'btn_ph_set': "📷 Fotoğrafı ayarla",
+        'btn_ph_clear': "🗑 Fotoğrafı kaldır",
+        'ph_ask': "Fotoğrafı şimdi gönderin:",
+        'ph_saved': "✅ Ticaret fotoğrafı kaydedildi.",
+        'ph_cleared': "🗑 Ticaret fotoğrafı kaldırıldı; mesajlar yeniden düz metin olacak.",
+        'ph_not_photo': "Bu mesaj bir fotoğraf değil; işlem iptal edildi.",
     },
 }
 
@@ -498,9 +541,9 @@ STRINGS = {
 # ---------------------------------------------------------------------------
 
 
-def init(bot, conn, admin_id, channel_id, lang='fa'):
+def init(bot, conn, admin_id, channel_id, lang='fa', is_admin=None, audit=None):
     """Wire the trade system into a running bot. Call once at startup."""
-    global _bot, _conn, _ADMIN, _CHANNEL, _lang, _ticker_started
+    global _bot, _conn, _ADMIN, _CHANNEL, _lang, _ticker_started, _is_admin, _audit
     assert lang in STRINGS, f"unsupported lang: {lang}"
     assert set(STRINGS['fa']) == set(STRINGS['en']) == set(STRINGS['tr']), \
         "STRINGS language key sets differ"
@@ -509,6 +552,10 @@ def init(bot, conn, admin_id, channel_id, lang='fa'):
     _ADMIN = admin_id
     _CHANNEL = channel_id
     _lang = lang
+    # admin_panel supplies this so promoted admins reach the trade screens too;
+    # without it only the owner id from the config counts.
+    _is_admin = is_admin if is_admin is not None else (lambda uid: uid == admin_id)
+    _audit = audit       # admin_panel.log, so trade admin actions reach the action log
     _migrate()
     _seed_config()
     if not _ticker_started:
@@ -550,8 +597,19 @@ def _migrate():
             _conn.execute("ALTER TABLE trades ADD COLUMN tolls TEXT DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass
+        # Whether the offer / tracking message was sent with a photo. Needed
+        # because a photo message must be edited as a caption, and the admin
+        # may change the photo while trades are already in flight.
+        for col in ('offer_photo', 'track_photo'):
+            try:
+                _conn.execute(f"ALTER TABLE trades ADD COLUMN {col} INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
         _conn.execute('''CREATE TABLE IF NOT EXISTS trade_config (
             key TEXT PRIMARY KEY, value INTEGER NOT NULL)''')
+        # trade_config only holds integers; the photo file_id needs text.
+        _conn.execute('''CREATE TABLE IF NOT EXISTS trade_settings (
+            key TEXT PRIMARY KEY, value TEXT NOT NULL)''')
         _conn.execute('''CREATE TABLE IF NOT EXISTS chokepoint_owners (
             node_id TEXT PRIMARY KEY, group_id INTEGER NOT NULL)''')
         _conn.commit()
@@ -574,6 +632,51 @@ def set_cfg(key, value):
     with _lock:
         _conn.execute("INSERT OR REPLACE INTO trade_config (key, value) VALUES (?, ?)", (key, int(value)))
         _conn.commit()
+
+
+# Telegram rejects captions longer than this, so long bodies stay text-only.
+CAPTION_LIMIT = 1024
+PHOTO_KEY = 'trade_photo'
+
+
+def photo():
+    """file_id of the admin-chosen trade photo, or '' when none is set."""
+    with _lock:
+        row = _conn.execute("SELECT value FROM trade_settings WHERE key=?", (PHOTO_KEY,)).fetchone()
+    return row[0] if row else ''
+
+
+def set_photo(file_id):
+    with _lock:
+        if file_id:
+            _conn.execute("INSERT OR REPLACE INTO trade_settings (key, value) VALUES (?, ?)",
+                          (PHOTO_KEY, str(file_id)))
+        else:
+            _conn.execute("DELETE FROM trade_settings WHERE key=?", (PHOTO_KEY,))
+        _conn.commit()
+
+
+def _send_rich(chat_id, text, **kwargs):
+    """Send text as a photo caption when a trade photo is set and it fits.
+
+    Returns (message, used_photo) so the caller can record how the message was
+    sent — editing it later has to match.
+    """
+    file_id = photo()
+    if file_id and len(text) <= CAPTION_LIMIT:
+        try:
+            return _bot.send_photo(chat_id, file_id, caption=text, **kwargs), True
+        except Exception:
+            pass  # stale file_id or upload problem: fall through to plain text
+    return _bot.send_message(chat_id, text, **kwargs), False
+
+
+def _edit_rich(chat_id, msg_id, text, used_photo, **kwargs):
+    """Edit a message previously sent by _send_rich, matching its kind."""
+    if used_photo:
+        _bot.edit_message_caption(caption=text, chat_id=chat_id, message_id=msg_id, **kwargs)
+    else:
+        _bot.edit_message_text(text, chat_id, msg_id, **kwargs)
 
 
 def _t(string_id, **kw):
@@ -803,7 +906,7 @@ def find_routes(mode, src, dst, sender_gid=None):
 def _path_names(mode, path):
     if len(path) == 2 and path[0] == path[1]:
         return _node_name(mode, path[0])
-    return ' → '.join(_node_name(mode, nid) for nid in path)
+    return _t('path_arrow').join(_node_name(mode, nid) for nid in path)
 
 
 # ---------------------------------------------------------------------------
@@ -904,6 +1007,12 @@ def handle_callback(call):
             _owner_pick_group(call, parts[2])
         elif op == 'og':
             _owner_set(call, parts[2], int(parts[3]))
+        elif op == 'ph':
+            _photo_menu(call)
+        elif op == 'phs':
+            _photo_ask(call)
+        elif op == 'phc':
+            _photo_clear(call)
         else:
             _answer(call, _t('err_generic'))
     except Exception:
@@ -1258,7 +1367,8 @@ def _confirm_send(call):
                     path=_path_names(c['mode'], r['path']),
                     dur=_dur(r['minutes']), exp=cfg('offer_expiry_min'))
     try:
-        sent = _bot.send_message(c['dest'], offer_text, reply_markup=markup, parse_mode='HTML')
+        sent, with_photo = _send_rich(c['dest'], offer_text, reply_markup=markup,
+                                      parse_mode='HTML')
     except Exception:
         _refund(trade)
         _exec("UPDATE trades SET status='cancelled' WHERE id=?", (tid,))
@@ -1266,8 +1376,8 @@ def _confirm_send(call):
         _bot.send_message(c['chat_id'], _t('send_failed'))
         _ctx.pop(user_id, None)
         return
-    _exec("UPDATE trades SET offer_chat_id=?, offer_msg_id=? WHERE id=?",
-          (sent.chat.id, sent.message_id, tid))
+    _exec("UPDATE trades SET offer_chat_id=?, offer_msg_id=?, offer_photo=? WHERE id=?",
+          (sent.chat.id, sent.message_id, 1 if with_photo else 0, tid))
 
     markup2 = types.InlineKeyboardMarkup()
     markup2.add(types.InlineKeyboardButton(_t('btn_cancel_offer'), callback_data=f'trd:c:{tid}'))
@@ -1333,22 +1443,22 @@ def _accept(call, tid):
     _edit_offer_msg(trade, 'offer_accepted_edit')
     # live tracking message in the sender's group
     try:
-        sent = _bot.send_message(trade['sender_group_id'], _track_text(trade),
-                                 parse_mode='HTML')
-        _exec("UPDATE trades SET track_chat_id=?, track_msg_id=? WHERE id=?",
-              (sent.chat.id, sent.message_id, tid))
+        sent, with_photo = _send_rich(trade['sender_group_id'], _track_text(trade),
+                                      parse_mode='HTML')
+        _exec("UPDATE trades SET track_chat_id=?, track_msg_id=?, track_photo=? WHERE id=?",
+              (sent.chat.id, sent.message_id, 1 if with_photo else 0, tid))
     except Exception:
         pass
     # channel announcement
     route = json.loads(trade['route'])
     try:
-        _bot.send_message(_CHANNEL,
-                          _t('depart_channel', emoji=_mode_emoji(trade['mode']),
-                             src_g=_esc(_title(trade['sender_group_id'])),
-                             dst_g=_esc(_title(trade['receiver_group_id'])),
-                             path=_path_names(trade['mode'], route),
-                             dur=_dur(sum(json.loads(trade['leg_minutes'])))),
-                          parse_mode='HTML')
+        _send_rich(_CHANNEL,
+                   _t('depart_channel', emoji=_mode_emoji(trade['mode']),
+                      src_g=_esc(_title(trade['sender_group_id'])),
+                      dst_g=_esc(_title(trade['receiver_group_id'])),
+                      path=_path_names(trade['mode'], route),
+                      dur=_dur(sum(json.loads(trade['leg_minutes'])))),
+                   parse_mode='HTML')
     except Exception:
         pass
 
@@ -1433,14 +1543,14 @@ def _edit_tracking(trade):
         return
     text = _track_text(trade)
     try:
-        _bot.edit_message_text(text, trade['track_chat_id'], trade['track_msg_id'],
-                               parse_mode='HTML')
+        _edit_rich(trade['track_chat_id'], trade['track_msg_id'], text,
+                   bool(trade.get('track_photo')), parse_mode='HTML')
     except Exception:
         # tracking message gone (deleted?) -> try a fresh one
         try:
-            sent = _bot.send_message(trade['track_chat_id'], text, parse_mode='HTML')
-            _exec("UPDATE trades SET track_msg_id=? WHERE id=?",
-                  (sent.message_id, trade['id']))
+            sent, with_photo = _send_rich(trade['track_chat_id'], text, parse_mode='HTML')
+            _exec("UPDATE trades SET track_msg_id=?, track_photo=? WHERE id=?",
+                  (sent.message_id, 1 if with_photo else 0, trade['id']))
         except Exception:
             pass
 
@@ -1487,11 +1597,11 @@ def _arrive(trade):
     except Exception:
         pass
     try:
-        _bot.send_message(_CHANNEL,
-                          _t('arrive_channel', emoji=_mode_emoji(trade['mode']),
-                             src_g=_esc(_title(trade['sender_group_id'])),
-                             dst_g=_esc(_title(trade['receiver_group_id']))),
-                          parse_mode='HTML')
+        _send_rich(_CHANNEL,
+                   _t('arrive_channel', emoji=_mode_emoji(trade['mode']),
+                      src_g=_esc(_title(trade['sender_group_id'])),
+                      dst_g=_esc(_title(trade['receiver_group_id']))),
+                   parse_mode='HTML')
     except Exception:
         pass
     return True
@@ -1560,10 +1670,24 @@ def _ticker_loop():
 
 
 def _require_admin(call):
-    if call.from_user.id != _ADMIN:
+    if not _admin_check(call.from_user.id):
         _answer(call, _t('admin_only'), alert=True)
         return False
     return True
+
+
+def _admin_check(user_id):
+    return _is_admin(user_id) if _is_admin is not None else (user_id == _ADMIN)
+
+
+def _log(actor_id, action, target='', detail=''):
+    """Forward an admin mutation to the dashboard's action log, if wired."""
+    if _audit is None:
+        return
+    try:
+        _audit(actor_id, action, target, detail)
+    except Exception:
+        pass
 
 
 def _admin_menu(call):
@@ -1573,9 +1697,52 @@ def _admin_menu(call):
     markup.add(types.InlineKeyboardButton(_t('btn_home_sea'), callback_data='trd:hm:s'),
                types.InlineKeyboardButton(_t('btn_home_land'), callback_data='trd:hm:l'),
                types.InlineKeyboardButton(_t('btn_owners'), callback_data='trd:ow:0'),
-               types.InlineKeyboardButton(_t('btn_cfg'), callback_data='trd:cfg:0'))
+               types.InlineKeyboardButton(_t('btn_cfg'), callback_data='trd:cfg:0'),
+               types.InlineKeyboardButton(_t('btn_photo'), callback_data='trd:ph'))
     _bot.send_message(call.message.chat.id, _t('adm_title'), reply_markup=markup)
     _answer(call)
+
+
+def _photo_menu(call):
+    if not _require_admin(call):
+        return
+    current = photo()
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(_t('btn_ph_set'), callback_data='trd:phs'))
+    if current:
+        markup.add(types.InlineKeyboardButton(_t('btn_ph_clear'), callback_data='trd:phc'))
+    _bot.send_message(call.message.chat.id,
+                      _t('ph_title', state=_t('ph_set') if current else _t('ph_unset')),
+                      reply_markup=markup)
+    _answer(call)
+
+
+def _photo_ask(call):
+    if not _require_admin(call):
+        return
+    _answer(call)
+    _bot.send_message(call.message.chat.id, _t('ph_ask'))
+    _next_step(call.message, call.from_user.id,
+               lambda msg: _photo_save(msg, call.from_user.id))
+
+
+def _photo_save(message, actor_id):
+    if not _admin_check(actor_id):
+        return
+    if not getattr(message, 'photo', None):
+        _bot.send_message(message.chat.id, _t('ph_not_photo'))
+        return
+    set_photo(message.photo[-1].file_id)
+    _log(actor_id, 'trade_photo', '', 'set')
+    _bot.send_message(message.chat.id, _t('ph_saved'))
+
+
+def _photo_clear(call):
+    if not _require_admin(call):
+        return
+    set_photo('')
+    _log(call.from_user.id, 'trade_photo', '', 'cleared')
+    _answer(call, _t('ph_cleared'))
 
 
 def _home_pick_group(call, mcode):
@@ -1619,6 +1786,7 @@ def _home_set(call, mcode, gid, nid):
         return
     home_col = 'home_sea' if mode == 'sea' else 'home_land'
     _exec(f"UPDATE users SET {home_col}=? WHERE group_id=?", (nid, gid))
+    _log(call.from_user.id, 'group_home', _title(gid), f"{mode}={nid}")
     _answer(call)
     _bot.send_message(call.message.chat.id,
                       _t('home_set', mode=_mode_name(mode), g=_esc(_title(gid)),
@@ -1685,6 +1853,7 @@ def _owner_set(call, nid, gid):
         return
     _set_owner(nid, gid)
     node = _node_name(_mode_of_node(nid), nid)
+    _log(call.from_user.id, 'chokepoint_owner', node, _title(gid) if gid else '-')
     _answer(call)
     if gid:
         _bot.send_message(call.message.chat.id,
@@ -1735,6 +1904,7 @@ def _ask_cfg(call, key):
             _bot.send_message(chat_id, _t('bad_number'))
             return
         set_cfg(key, val)
+        _log(call.from_user.id, 'trade_config', key, str(val))
         _bot.send_message(chat_id, _t('cfg_set', key=key, val=val))
 
-    _next_step(call.message, _ADMIN, on_value)
+    _next_step(call.message, call.from_user.id, on_value)

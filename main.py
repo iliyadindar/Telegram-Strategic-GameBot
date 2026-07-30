@@ -3,12 +3,17 @@ from telebot import types
 import sqlite3
 import html
 
+import admin_panel
+import bot_config
 import trade_system
 
-# Initialize the bot with your token
-API_TOKEN = 'YOUR TOKEN'
-ADMIN_ID = 000
-CHANNEL_ID = "YOUR CHANNEL ID, EXAMPLE : @SOMETHING"
+# Credentials are never hardcoded: they come from the environment, from
+# bot_config.json, or — the first time — from a prompt in this terminal.
+_conf = bot_config.load(lang='fa')
+API_TOKEN = _conf['token']
+ADMIN_ID = _conf['admin_id']
+CHANNEL_ID = _conf['channel_id']
+WAR_CHANNEL_ID = _conf['war_channel_id']
 bot = telebot.TeleBot(API_TOKEN)
 
 # Initialize the database
@@ -61,8 +66,18 @@ conn.commit()
 
 user_context = {}
 
+# Admin dashboard: access control, feature toggles and the action log. It has
+# to come first — the trade system asks it who counts as an admin.
+admin_panel.init(bot, conn, ADMIN_ID, CHANNEL_ID, WAR_CHANNEL_ID, lang='fa',
+                 game_menu=lambda call: send_main_menu(call.message.chat.id, call.from_user.id))
+
 # World trade system (sea + land routes, tolls, live convoy tracking)
-trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='fa')
+trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='fa',
+                  is_admin=admin_panel.is_admin, audit=admin_panel.log)
+
+# 'trd:' callbacks that belong to the trade admin screens. They stay reachable
+# even when the player-facing trade feature is switched off.
+TRADE_ADMIN_OPS = ('adm', 'hm', 'hg', 'h', 'cfg', 'ck', 'ow', 'on', 'og', 'ph', 'phs', 'phc')
 
 # Valid asset columns that the admin may edit — used both to build the editor
 # buttons and to validate the column name before it is used in a SQL statement.
@@ -84,47 +99,68 @@ def is_group_chat(message):
 
 @bot.message_handler(commands=['setlord'])
 def set_lord(message):
-    if is_group_chat(message):
-        user_id = message.from_user.id
-        group_id = message.chat.id
-        cursor.execute(
-            "INSERT OR IGNORE INTO users (user_id, group_id) VALUES (?, ?)",
-            (user_id, group_id))
-        conn.commit()
-        bot.reply_to(message, "شما به عنوان یک لرد در این گروه ثبت شدید.")
-    else:
-        bot.reply_to(message, "این دستور فقط در گروه‌ها قابل استفاده است.")
+    # A lord is appointed by an admin replying to that player's message.
+    admin_panel.handle_setlord(message)
+
+
+@bot.message_handler(commands=['admin'])
+def admin_command(message):
+    """The dashboard, available in private chat and in groups."""
+    if not admin_panel.open_panel(message.chat.id, message.from_user.id):
+        bot.reply_to(message, "شما ادمین نیستید.")
+
+
+# Game menu buttons: callback data -> (label, feature key it belongs to)
+MENU_BUTTONS = (
+    ('assets', "💰 دارایی", 'assets'),
+    ('upgrade', "🛠️ ارتقا", 'upgrade'),
+    ('statement', "🙌 بیانیه", 'statement'),
+    ('private_message', "✉️ پیام خصوصی", 'private_message'),
+    ('treaty', "📜 معاهده", 'treaty'),
+    ('attack', "⚔️ لشکرکشی", 'attack'),
+    ('trd:menu', "🚢 تجارت جهانی", 'trade'),
+)
+
+
+def send_main_menu(chat_id, user_id):
+    """The /start keyboard. Disabled features are left out entirely."""
+    cursor.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,))
+    if not cursor.fetchone():
+        bot.send_message(chat_id, "شما هنوز لرد نیستید. یک ادمین باید روی پیام شما "
+                                  "در گروه ریپلای کند و /setlord بزند.")
+        return
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for data, label, feature in MENU_BUTTONS:
+        if admin_panel.feature_enabled(feature):
+            markup.add(types.InlineKeyboardButton(label, callback_data=data))
+    if admin_panel.is_admin(user_id):
+        markup.add(types.InlineKeyboardButton("🛡 پنل مدیریت", callback_data='ap:home'))
+        if admin_panel.feature_enabled('weekly_update'):
+            markup.add(types.InlineKeyboardButton("🔨آپ هفتگی", callback_data='weekly_update'))
+        markup.add(types.InlineKeyboardButton("🛠️ تنظیم دارایی", callback_data='change_assets'))
+        markup.add(types.InlineKeyboardButton("🌍 مدیریت تجارت", callback_data='trd:adm'))
+    bot.send_message(chat_id, "خوش آمدین قربان", reply_markup=markup)
 
 
 @bot.message_handler(commands=['start'])
 def start(message):
     if is_group_chat(message):
-        user_id = message.from_user.id
-        cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-        user = cursor.fetchone()
-        if user:
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(types.InlineKeyboardButton("💰 دارایی", callback_data='assets'))
-            markup.add(types.InlineKeyboardButton("🛠️ ارتقا", callback_data='upgrade'))
-            markup.add(types.InlineKeyboardButton("🙌 بیانیه", callback_data='statement'))
-            markup.add(types.InlineKeyboardButton("✉️ پیام خصوصی", callback_data='private_message'))
-            markup.add(types.InlineKeyboardButton("📜 معاهده", callback_data='treaty'))
-            markup.add(types.InlineKeyboardButton("⚔️ لشکرکشی", callback_data='attack'))
-            markup.add(types.InlineKeyboardButton("🚢 تجارت جهانی", callback_data='trd:menu'))
-            if user_id == ADMIN_ID:
-                markup.add(types.InlineKeyboardButton("🔨آپ هفتگی", callback_data='weekly_update'))
-                markup.add(types.InlineKeyboardButton("🛠️ تنظیم دارایی", callback_data='change_assets'))
-                markup.add(types.InlineKeyboardButton("🌍 مدیریت تجارت", callback_data='trd:adm'))
-            bot.send_message(message.chat.id, "خوش آمدین قربان", reply_markup=markup)
-        else:
-            bot.reply_to(message, "شما ابتدا باید با /setlord ثبت نام کنید.")
+        send_main_menu(message.chat.id, message.from_user.id)
     else:
-        bot.reply_to(message, "این ربات فقط در گروه‌ها قابل استفاده است.")
+        bot.reply_to(message, "این ربات فقط در گروه‌ها قابل استفاده است. "
+                              "ادمین‌ها می‌توانند از /admin در همین‌جا استفاده کنند.")
 
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    if call.data.startswith('ap:'):
+        admin_panel.handle_callback(call)
+        return
     if call.data.startswith('trd:'):
+        op = call.data.split(':')[1] if ':' in call.data else ''
+        # Admin trade screens keep working while the player-facing feature is off.
+        if op not in TRADE_ADMIN_OPS and not admin_panel.require_feature(call, 'trade'):
+            return
         trade_system.handle_callback(call)
         return
     user_id = call.from_user.id
@@ -134,8 +170,12 @@ def callback_query(call):
     #print(data_parts)
 
     if data_parts[0] == 'assets':
+        if not admin_panel.require_feature(call, 'assets'):
+            return
         show_assets(call.message)
     elif data_parts[0] == 'upgrade':
+        if not admin_panel.require_feature(call, 'upgrade'):
+            return
         if len(data_parts) == 1:
             show_upgrade_options(call.message)
         elif len(data_parts) == 3:
@@ -143,37 +183,50 @@ def callback_query(call):
         elif '_'.join(data_parts[0:2]) == 'upgrade_confirm':
             process_upgrade_confirmation(call)
     elif call.data == 'treaty_confirmed' or call.data == 'treaty_not_confirmed':
+        if not admin_panel.require_feature(call, 'treaty'):
+            return
         process_treaty_confirmation(call)
     elif data_parts[0] == 'private':
+        if not admin_panel.require_feature(call, 'private_message'):
+            return
         if len(data_parts) == 2 and data_parts[1] == 'message':
             ask_for_private_message(call.message, user_id)
         elif len(data_parts) == 3 and data_parts[1] == 'send':
             group_id = int(data_parts[2])
             send_private_message(call, group_id)
     elif data_parts[0] == 'change':
+        if not admin_panel.is_admin(user_id):
+            bot.answer_callback_query(call.id, "شما ادمین نیستید.")
+            return
         if len(data_parts) == 2 and data_parts[1] == 'assets':
-            if user_id == ADMIN_ID:
-                show_asset_change_options(call.message)
-            else:
-                bot.answer_callback_query(call.id, "شما ادمین نیستید.")
+            show_asset_change_options(call.message)
         elif len(data_parts) >= 3 and data_parts[1] == 'asset':
             asset_type = '_'.join(data_parts[2:])
-            ask_for_new_asset_value(call.message, asset_type)
+            ask_for_new_asset_value(call.message, asset_type, user_id)
     elif data_parts[0] == 'weekly':
         if data_parts[1] == 'update':
-            if user_id == ADMIN_ID:
-                collect_factory_output(call.message)
-            else:
+            if not admin_panel.is_admin(user_id):
                 bot.answer_callback_query(call.id, "شما ادمین نیستید.")
+                return
+            if not admin_panel.require_feature(call, 'weekly_update'):
+                return
+            collect_factory_output(call.message)
+            admin_panel.log(user_id, 'weekly_update', call.message.chat.title or call.message.chat.id)
     elif data_parts[0] == 'attack':
+        if not admin_panel.require_feature(call, 'attack'):
+            return
         if len(data_parts) == 1:
             ask_for_attack_type(call.message)
         else:
             handle_attack_type_selection(call)
     elif data_parts[0] == 'statement':
+        if not admin_panel.require_feature(call, 'statement'):
+            return
         if len(data_parts) == 1:
             ask_for_statement(call.message, user_id)
     elif data_parts[0] == 'treaty':
+        if not admin_panel.require_feature(call, 'treaty'):
+            return
         if len(data_parts) == 1:
             show_treaty_options(call.message)
         elif len(data_parts) == 2 and data_parts[1] == 'new':
@@ -240,7 +293,8 @@ def show_assets(message):
         )
         bot.send_message(message.chat.id, assets_message, parse_mode='HTML')
     else:
-        bot.send_message(message.chat.id, "شما ابتدا باید با /setlord ثبت نام کنید.")
+        bot.send_message(message.chat.id, "این گروه هنوز لردی ندارد. یک ادمین باید روی پیام "
+                                          "بازیکن ریپلای کند و /setlord بزند.")
 
 
 def show_upgrade_options(message):
@@ -483,9 +537,9 @@ def show_asset_change_options(message):
     bot.send_message(message.chat.id, "انتخاب کنید که کدام دارایی را میخواهید تغییر دهید:", reply_markup=markup)
 
 
-def ask_for_new_asset_value(message, asset_type):
+def ask_for_new_asset_value(message, asset_type, actor_id):
     group_id = message.chat.id
-    user_context[group_id] = {'asset_type': asset_type}
+    user_context[group_id] = {'asset_type': asset_type, 'actor_id': actor_id}
     bot.send_message(message.chat.id, f"لطفا مقدار جدید برای {asset_type} را وارد کنید:")
     bot.register_next_step_handler(message, lambda msg: set_new_asset_value(msg, group_id))
 
@@ -499,6 +553,8 @@ def set_new_asset_value(message, group_id):
             return
         cursor.execute(f"UPDATE users SET {asset_type} = ? WHERE group_id = ?", (new_value, group_id))
         conn.commit()
+        admin_panel.log(user_context[group_id].get('actor_id', 0), 'asset_edit',
+                        message.chat.title or group_id, f"{asset_type}={new_value}")
         bot.send_message(message.chat.id, f"{asset_type} به {new_value} تغییر یافت.")
     except ValueError:
         bot.send_message(message.chat.id, "مقدار وارد شده معتبر نیست. لطفا یک عدد وارد کنید.")
@@ -673,14 +729,10 @@ def ask_for_attack_type(message):
 
 
 def handle_attack_type_selection(call):
-    global photo_url
     user_id = call.from_user.id
     attack_type = call.data.split('_')[2]
+    # Per-user, not a module global: two campaigns can be in flight at once.
     user_context[user_id] = {'attack_type': attack_type}
-    if attack_type == "land":
-        photo_url = "https://t.me/bsnsjwjwiiwjwjw92u2b29hwnwns/2"
-    elif attack_type == "sea":
-        photo_url = "https://t.me/bsnsjwjwiiwjwjw92u2b29hwnwns/3"
     bot.send_message(call.message.chat.id, "لطفا اطلاعات ارتش خود را وارد کنید:")
     bot.register_next_step_handler(call.message, lambda msg: get_attack_origin(msg, user_id))
 
@@ -716,18 +768,22 @@ def send_attack_details(message, user_id):
     user_info = bot.get_chat(user_id)
     user_name = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
 
-    # Send details to admin
-    bot.send_message(ADMIN_ID,
-                     f"🔖 ارتش کشور {attack_origin} به مقصد {attack_destination} حرکت کردند ({attack_type})\n\n⚜️ "
-                     f"فرمانده: {user_name}\n⌛️ زمان رسیدن: {attack_time}\n📝 جزئیات: {attack_details}",
-                     parse_mode='HTML')
+    headline = (f"🔖 ارتش کشور {attack_origin} به مقصد {attack_destination} "
+                f"حرکت کردند ({attack_type})\n\n⚜️ فرمانده: {user_name}\n"
+                f"⌛️ زمان رسیدن: {attack_time}")
 
-    # Send summary to channel
-    bot.send_photo(CHANNEL_ID, photo_url, caption=
-    f"🔖 ارتش کشور {attack_origin} به مقصد {attack_destination} حرکت کردند ({attack_type})\n\n⚜️ "
-    f"فرمانده: {user_name}\n⌛️ زمان رسیدن: {attack_time}",
-                   parse_mode='HTML')
+    # Troop numbers stay private: the owner and every bot admin get the
+    # full report, the public post below carries none of it.
+    admin_panel.notify_admins(f"{headline}\n📝 جزئیات: {attack_details}", parse_mode='HTML')
 
+    # Public announcement in the war channel — flavour only.
+    war_photo = admin_panel.war_photo(attack_type)
+    if war_photo:
+        bot.send_photo(WAR_CHANNEL_ID, war_photo, caption=headline, parse_mode='HTML')
+    else:
+        bot.send_message(WAR_CHANNEL_ID, headline, parse_mode='HTML')
+
+    user_context.pop(user_id, None)
     bot.send_message(message.chat.id, "اطلاعات لشکرکشی ارسال شد.")
 
 

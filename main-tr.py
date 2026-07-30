@@ -3,12 +3,17 @@ from telebot import types
 import sqlite3
 import html
 
+import admin_panel
+import bot_config
 import trade_system
 
-# Initialize the bot with your token
-API_TOKEN = 'YOUR TOKEN'
-ADMIN_ID = 000
-CHANNEL_ID = "YOUR CHANNEL ID, EXAMPLE : @SOMETHING"
+# Credentials are never hardcoded: they come from the environment, from
+# bot_config.json, or — the first time — from a prompt in this terminal.
+_conf = bot_config.load(lang='tr')
+API_TOKEN = _conf['token']
+ADMIN_ID = _conf['admin_id']
+CHANNEL_ID = _conf['channel_id']
+WAR_CHANNEL_ID = _conf['war_channel_id']
 bot = telebot.TeleBot(API_TOKEN)
 
 # Initialize the database
@@ -61,8 +66,18 @@ conn.commit()
 
 user_context = {}
 
+# Admin dashboard: access control, feature toggles and the action log. It has
+# to come first — the trade system asks it who counts as an admin.
+admin_panel.init(bot, conn, ADMIN_ID, CHANNEL_ID, WAR_CHANNEL_ID, lang='tr',
+                 game_menu=lambda call: send_main_menu(call.message.chat.id, call.from_user.id))
+
 # World trade system (sea + land routes, tolls, live convoy tracking)
-trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='tr')
+trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='tr',
+                  is_admin=admin_panel.is_admin, audit=admin_panel.log)
+
+# 'trd:' callbacks that belong to the trade admin screens. They stay reachable
+# even when the player-facing trade feature is switched off.
+TRADE_ADMIN_OPS = ('adm', 'hm', 'hg', 'h', 'cfg', 'ck', 'ow', 'on', 'og', 'ph', 'phs', 'phc')
 
 # Yöneticinin düzenleyebileceği geçerli varlık sütunları — hem düzenleyici
 # butonlarını oluşturmak hem de sütun adını SQL'de kullanmadan önce doğrulamak için.
@@ -114,47 +129,68 @@ def is_group_chat(message):
 
 @bot.message_handler(commands=['setlord'])
 def set_lord(message):
-    if is_group_chat(message):
-        user_id = message.from_user.id
-        group_id = message.chat.id
-        cursor.execute(
-            "INSERT OR IGNORE INTO users (user_id, group_id) VALUES (?, ?)",
-            (user_id, group_id))
-        conn.commit()
-        bot.reply_to(message, "Bu grupta lord olarak kaydoldunuz.")
-    else:
-        bot.reply_to(message, "Bu komut yalnızca gruplarda kullanılabilir.")
+    # A lord is appointed by an admin replying to that player's message.
+    admin_panel.handle_setlord(message)
+
+
+@bot.message_handler(commands=['admin'])
+def admin_command(message):
+    """The dashboard, available in private chat and in groups."""
+    if not admin_panel.open_panel(message.chat.id, message.from_user.id):
+        bot.reply_to(message, "Yönetici değilsiniz.")
+
+
+# Game menu buttons: callback data -> (label, feature key it belongs to)
+MENU_BUTTONS = (
+    ('assets', "💰 Varlıklar", 'assets'),
+    ('upgrade', "🛠️ Yükseltme", 'upgrade'),
+    ('statement', "🙌 Bildiri", 'statement'),
+    ('private_message', "✉️ Özel Mesaj", 'private_message'),
+    ('treaty', "📜 Antlaşma", 'treaty'),
+    ('attack', "⚔️ Askeri Sefer", 'attack'),
+    ('trd:menu', "🚢 Dünya Ticareti", 'trade'),
+)
+
+
+def send_main_menu(chat_id, user_id):
+    """The /start keyboard. Disabled features are left out entirely."""
+    cursor.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,))
+    if not cursor.fetchone():
+        bot.send_message(chat_id, "Henüz lord değilsiniz. Bir yöneticinin gruptaki mesajınızı "
+                                  "yanıtlayıp /setlord göndermesi gerekir.")
+        return
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for data, label, feature in MENU_BUTTONS:
+        if admin_panel.feature_enabled(feature):
+            markup.add(types.InlineKeyboardButton(label, callback_data=data))
+    if admin_panel.is_admin(user_id):
+        markup.add(types.InlineKeyboardButton("🛡 Yönetim Paneli", callback_data='ap:home'))
+        if admin_panel.feature_enabled('weekly_update'):
+            markup.add(types.InlineKeyboardButton("🔨 Haftalık Güncelleme", callback_data='weekly_update'))
+        markup.add(types.InlineKeyboardButton("🛠️ Varlık Ayarı", callback_data='change_assets'))
+        markup.add(types.InlineKeyboardButton("🌍 Ticaret Yönetimi", callback_data='trd:adm'))
+    bot.send_message(chat_id, "Hoş geldiniz lordum", reply_markup=markup)
 
 
 @bot.message_handler(commands=['start'])
 def start(message):
     if is_group_chat(message):
-        user_id = message.from_user.id
-        cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-        user = cursor.fetchone()
-        if user:
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(types.InlineKeyboardButton("💰 Varlıklar", callback_data='assets'))
-            markup.add(types.InlineKeyboardButton("🛠️ Yükseltme", callback_data='upgrade'))
-            markup.add(types.InlineKeyboardButton("🙌 Bildiri", callback_data='statement'))
-            markup.add(types.InlineKeyboardButton("✉️ Özel Mesaj", callback_data='private_message'))
-            markup.add(types.InlineKeyboardButton("📜 Antlaşma", callback_data='treaty'))
-            markup.add(types.InlineKeyboardButton("⚔️ Askeri Sefer", callback_data='attack'))
-            markup.add(types.InlineKeyboardButton("🚢 Dünya Ticareti", callback_data='trd:menu'))
-            if user_id == ADMIN_ID:
-                markup.add(types.InlineKeyboardButton("🔨 Haftalık Güncelleme", callback_data='weekly_update'))
-                markup.add(types.InlineKeyboardButton("🛠️ Varlık Ayarı", callback_data='change_assets'))
-                markup.add(types.InlineKeyboardButton("🌍 Ticaret Yönetimi", callback_data='trd:adm'))
-            bot.send_message(message.chat.id, "Hoş geldiniz lordum", reply_markup=markup)
-        else:
-            bot.reply_to(message, "Önce /setlord ile kayıt olmalısınız.")
+        send_main_menu(message.chat.id, message.from_user.id)
     else:
-        bot.reply_to(message, "Bu bot yalnızca gruplarda kullanılabilir.")
+        bot.reply_to(message, "Bu bot yalnızca gruplarda kullanılabilir. "
+                              "Yöneticiler burada /admin kullanabilir.")
 
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    if call.data.startswith('ap:'):
+        admin_panel.handle_callback(call)
+        return
     if call.data.startswith('trd:'):
+        op = call.data.split(':')[1] if ':' in call.data else ''
+        # Admin trade screens keep working while the player-facing feature is off.
+        if op not in TRADE_ADMIN_OPS and not admin_panel.require_feature(call, 'trade'):
+            return
         trade_system.handle_callback(call)
         return
     user_id = call.from_user.id
@@ -164,8 +200,12 @@ def callback_query(call):
     #print(data_parts)
 
     if data_parts[0] == 'assets':
+        if not admin_panel.require_feature(call, 'assets'):
+            return
         show_assets(call.message)
     elif data_parts[0] == 'upgrade':
+        if not admin_panel.require_feature(call, 'upgrade'):
+            return
         if len(data_parts) == 1:
             show_upgrade_options(call.message)
         elif len(data_parts) == 3:
@@ -173,37 +213,50 @@ def callback_query(call):
         elif '_'.join(data_parts[0:2]) == 'upgrade_confirm':
             process_upgrade_confirmation(call)
     elif call.data == 'treaty_confirmed' or call.data == 'treaty_not_confirmed':
+        if not admin_panel.require_feature(call, 'treaty'):
+            return
         process_treaty_confirmation(call)
     elif data_parts[0] == 'private':
+        if not admin_panel.require_feature(call, 'private_message'):
+            return
         if len(data_parts) == 2 and data_parts[1] == 'message':
             ask_for_private_message(call.message, user_id)
         elif len(data_parts) == 3 and data_parts[1] == 'send':
             group_id = int(data_parts[2])
             send_private_message(call, group_id)
     elif data_parts[0] == 'change':
+        if not admin_panel.is_admin(user_id):
+            bot.answer_callback_query(call.id, "Yönetici değilsiniz.")
+            return
         if len(data_parts) == 2 and data_parts[1] == 'assets':
-            if user_id == ADMIN_ID:
-                show_asset_change_options(call.message)
-            else:
-                bot.answer_callback_query(call.id, "Yönetici değilsiniz.")
+            show_asset_change_options(call.message)
         elif len(data_parts) >= 3 and data_parts[1] == 'asset':
             asset_type = '_'.join(data_parts[2:])
-            ask_for_new_asset_value(call.message, asset_type)
+            ask_for_new_asset_value(call.message, asset_type, user_id)
     elif data_parts[0] == 'weekly':
         if data_parts[1] == 'update':
-            if user_id == ADMIN_ID:
-                collect_factory_output(call.message)
-            else:
+            if not admin_panel.is_admin(user_id):
                 bot.answer_callback_query(call.id, "Yönetici değilsiniz.")
+                return
+            if not admin_panel.require_feature(call, 'weekly_update'):
+                return
+            collect_factory_output(call.message)
+            admin_panel.log(user_id, 'weekly_update', call.message.chat.title or call.message.chat.id)
     elif data_parts[0] == 'attack':
+        if not admin_panel.require_feature(call, 'attack'):
+            return
         if len(data_parts) == 1:
             ask_for_attack_type(call.message)
         else:
             handle_attack_type_selection(call)
     elif data_parts[0] == 'statement':
+        if not admin_panel.require_feature(call, 'statement'):
+            return
         if len(data_parts) == 1:
             ask_for_statement(call.message, user_id)
     elif data_parts[0] == 'treaty':
+        if not admin_panel.require_feature(call, 'treaty'):
+            return
         if len(data_parts) == 1:
             show_treaty_options(call.message)
         elif len(data_parts) == 2 and data_parts[1] == 'new':
@@ -270,7 +323,8 @@ def show_assets(message):
         )
         bot.send_message(message.chat.id, assets_message, parse_mode='HTML')
     else:
-        bot.send_message(message.chat.id, "Önce /setlord ile kayıt olmalısınız.")
+        bot.send_message(message.chat.id, "Bu grubun henüz bir lordu yok. Bir yöneticinin "
+                                          "oyuncunun mesajını yanıtlayıp /setlord göndermesi gerekir.")
 
 
 def show_upgrade_options(message):
@@ -513,9 +567,9 @@ def show_asset_change_options(message):
     bot.send_message(message.chat.id, "Hangi varlığı değiştirmek istediğinizi seçin:", reply_markup=markup)
 
 
-def ask_for_new_asset_value(message, asset_type):
+def ask_for_new_asset_value(message, asset_type, actor_id):
     group_id = message.chat.id
-    user_context[group_id] = {'asset_type': asset_type}
+    user_context[group_id] = {'asset_type': asset_type, 'actor_id': actor_id}
     bot.send_message(message.chat.id, f"Lütfen {asset_labels.get(asset_type, asset_type)} için yeni değeri girin:")
     bot.register_next_step_handler(message, lambda msg: set_new_asset_value(msg, group_id))
 
@@ -529,6 +583,8 @@ def set_new_asset_value(message, group_id):
             return
         cursor.execute(f"UPDATE users SET {asset_type} = ? WHERE group_id = ?", (new_value, group_id))
         conn.commit()
+        admin_panel.log(user_context[group_id].get('actor_id', 0), 'asset_edit',
+                        message.chat.title or group_id, f"{asset_type}={new_value}")
         bot.send_message(message.chat.id, f"{asset_labels.get(asset_type, asset_type)} {new_value} olarak değiştirildi.")
     except ValueError:
         bot.send_message(message.chat.id, "Girilen değer geçersiz. Lütfen bir sayı girin.")
@@ -703,14 +759,10 @@ def ask_for_attack_type(message):
 
 
 def handle_attack_type_selection(call):
-    global photo_url
     user_id = call.from_user.id
     attack_type = call.data.split('_')[2]
+    # Per-user, not a module global: two campaigns can be in flight at once.
     user_context[user_id] = {'attack_type': attack_type}
-    if attack_type == "land":
-        photo_url = "https://t.me/bsnsjwjwiiwjwjw92u2b29hwnwns/2"
-    elif attack_type == "sea":
-        photo_url = "https://t.me/bsnsjwjwiiwjwjw92u2b29hwnwns/3"
     bot.send_message(call.message.chat.id, "Lütfen ordu bilgilerinizi girin:")
     bot.register_next_step_handler(call.message, lambda msg: get_attack_origin(msg, user_id))
 
@@ -747,18 +799,22 @@ def send_attack_details(message, user_id):
     user_info = bot.get_chat(user_id)
     user_name = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
 
-    # Send details to admin
-    bot.send_message(ADMIN_ID,
-                     f"🔖 {attack_origin} ordusu {attack_destination} hedefine doğru harekete geçti ({attack_type_label})\n\n⚜️ "
-                     f"Komutan: {user_name}\n⌛️ Varış zamanı: {attack_time}\n📝 Detaylar: {attack_details}",
-                     parse_mode='HTML')
+    headline = (f"🔖 {attack_origin} ordusu {attack_destination} hedefine doğru harekete geçti "
+                f"({attack_type_label})\n\n⚜️ Komutan: {user_name}\n"
+                f"⌛️ Varış zamanı: {attack_time}")
 
-    # Send summary to channel
-    bot.send_photo(CHANNEL_ID, photo_url, caption=
-    f"🔖 {attack_origin} ordusu {attack_destination} hedefine doğru harekete geçti ({attack_type_label})\n\n⚜️ "
-    f"Komutan: {user_name}\n⌛️ Varış zamanı: {attack_time}",
-                   parse_mode='HTML')
+    # Troop numbers stay private: the owner and every bot admin get the
+    # full report, the public post below carries none of it.
+    admin_panel.notify_admins(f"{headline}\n📝 Detaylar: {attack_details}", parse_mode='HTML')
 
+    # Public announcement in the war channel — flavour only.
+    war_photo = admin_panel.war_photo(attack_type)
+    if war_photo:
+        bot.send_photo(WAR_CHANNEL_ID, war_photo, caption=headline, parse_mode='HTML')
+    else:
+        bot.send_message(WAR_CHANNEL_ID, headline, parse_mode='HTML')
+
+    user_context.pop(user_id, None)
     bot.send_message(message.chat.id, "Sefer bilgileri gönderildi.")
 
 

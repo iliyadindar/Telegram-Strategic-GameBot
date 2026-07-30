@@ -6,6 +6,9 @@ __pycache__/
 # SQLite database created at runtime
 game_bot.db
 
+# Bot token / owner id / channel ids, written on first run — never commit
+bot_config.json
+
 # Virtual environments
 .venv/
 venv/
