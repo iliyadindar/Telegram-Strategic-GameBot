@@ -19,6 +19,8 @@ import traceback
 
 from telebot import types
 
+import asset_catalog
+
 # ---------------------------------------------------------------------------
 # Module state
 # ---------------------------------------------------------------------------
@@ -186,12 +188,20 @@ CONFIG_DEFAULTS = {
     'toll_pam': 150, 'toll_khy': 100,
 }
 
-# tradeable resources: short code <-> users column
-RESOURCES = (
-    ('mo', 'money'), ('gd', 'gold'), ('ir', 'iron'), ('st', 'stones'),
-    ('wd', 'wood'), ('fd', 'food'), ('mt', 'meat'), ('cl', 'clothes'),
-)
-RES_BY_CODE = dict(RESOURCES)
+# Tradeable resources come from the asset catalog, so a resource an admin adds
+# in-game can be shipped without a code change. The catalog key doubles as the
+# callback code; it is validated as an identifier before it is ever stored.
+def resource_codes():
+    return asset_catalog.tradeable_resources()
+
+
+def _res_column(code):
+    """Map a callback code back to a column, or None if it is not tradeable."""
+    return code if code in resource_codes() else None
+
+
+def _res_name(col):
+    return asset_catalog.label(col, _lang)
 
 # sea vehicles: short code, users column, capacity config key
 SHIPS = (
@@ -200,15 +210,6 @@ SHIPS = (
     ('l', 'large_ships', 'cap_large'),
 )
 SHIP_BY_CODE = {c: col for c, col, _ in SHIPS}
-
-RES_NAMES = {
-    'fa': {'money': '💵 پول', 'gold': '🏅 طلا', 'iron': '🪛 آهن', 'stones': '🪨 سنگ',
-           'wood': '🌲 چوب', 'food': '🍞 غذا', 'meat': '🍖 گوشت', 'clothes': '🥋 لباس'},
-    'en': {'money': '💵 Money', 'gold': '🏅 Gold', 'iron': '🪛 Iron', 'stones': '🪨 Stones',
-           'wood': '🌲 Wood', 'food': '🍞 Food', 'meat': '🍖 Meat', 'clothes': '🥋 Clothes'},
-    'tr': {'money': '💵 Para', 'gold': '🏅 Altın', 'iron': '🪛 Demir', 'stones': '🪨 Taş',
-           'wood': '🌲 Odun', 'food': '🍞 Yiyecek', 'meat': '🍖 Et', 'clothes': '🥋 Kıyafet'},
-}
 
 VEH_NAMES = {
     'fa': {'small_ships': '⛵ کشتی کوچک', 'medium_ships': '🚢 کشتی متوسط',
@@ -1096,7 +1097,7 @@ def _choose_dest(call, dest_gid):
 def _goods_lines(goods):
     if not goods:
         return _t('goods_none')
-    return '\n'.join(f"• {RES_NAMES[_lang][col]}: {amt}" for col, amt in goods.items())
+    return '\n'.join(f"• {_res_name(col)}: {amt}" for col, amt in goods.items())
 
 
 def _send_goods_menu(user_id):
@@ -1105,10 +1106,10 @@ def _send_goods_menu(user_id):
         return
     markup = types.InlineKeyboardMarkup(row_width=2)
     buttons = []
-    for code, col in RESOURCES:
+    for col in resource_codes():
         amt = c['goods'].get(col, 0)
-        label = RES_NAMES[_lang][col] + (f" ({amt})" if amt else "")
-        buttons.append(types.InlineKeyboardButton(label, callback_data=f'trd:g:{code}'))
+        label = _res_name(col) + (f" ({amt})" if amt else "")
+        buttons.append(types.InlineKeyboardButton(label, callback_data=f'trd:g:{col}'))
     markup.add(*buttons)
     markup.add(types.InlineKeyboardButton(_t('btn_goods_done'), callback_data='trd:gok'),
                types.InlineKeyboardButton(_t('btn_cancel'), callback_data='trd:x'))
@@ -1128,14 +1129,14 @@ def _ask_amount(call, code):
     c = _get_ctx(call)
     if not c:
         return
-    col = RES_BY_CODE.get(code)
+    col = _res_column(code)
     if not col:
         _answer(call, _t('err_generic'))
         return
     user_id = call.from_user.id
     bal = _balance(c['chat_id'], col)
     _answer(call)
-    _bot.send_message(c['chat_id'], _t('ask_amount', res=RES_NAMES[_lang][col], bal=bal))
+    _bot.send_message(c['chat_id'], _t('ask_amount', res=_res_name(col), bal=bal))
 
     def on_amount(msg):
         cc = _ctx.get(user_id)

@@ -17,7 +17,7 @@ sys.path.insert(0, ROOT)
 
 import telebot
 
-from stubs import Chat, Message, StubBot, User
+from stubs import Call, Chat, Message, StubBot, User
 
 ENTRYPOINTS = ('main.py', 'main-en.py', 'main-tr.py')
 
@@ -188,6 +188,94 @@ class MenuKeyboardTest(unittest.TestCase):
         data = self.menu_for(4242)
         self.assertNotIn('weekly_update', data)
         self.assertIn('ap:home', data, 'the panel itself is never hidden')
+
+
+class AddArchersEndToEndTest(unittest.TestCase):
+    """The Phase 2 headline: add a unit and its camp from Telegram, no code change."""
+
+    OWNER = 4242
+    LORD = 55
+    GROUP = -10
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.dir.cleanup)
+        self.module, self.bot = load_entrypoint('main.py', self.dir.name)
+        self.addCleanup(self.module.conn.close)
+        self.bot._chats = {
+            self.OWNER: Chat(self.OWNER, 'private', first_name='Owner'),
+            self.GROUP: Chat(self.GROUP, title='Persia'),
+        }
+        self.module.cursor.execute("INSERT INTO users (user_id, group_id) VALUES (?, ?)",
+                                   (self.LORD, self.GROUP))
+        self.module.conn.commit()
+
+    def tap(self, data, user_id=None):
+        user_id = self.OWNER if user_id is None else user_id
+        self.module.callback_query(
+            Call(data, User(user_id), Message(Chat(self.GROUP), User(user_id))))
+
+    def feed(self, text, user_id=None):
+        user_id = self.OWNER if user_id is None else user_id
+        self.bot.next_steps[-1][1](Message(Chat(self.GROUP), User(user_id), text=text))
+
+    def value(self, column):
+        row = self.module.conn.execute(
+            f"SELECT {column} FROM users WHERE group_id=?", (self.GROUP,)).fetchone()
+        return row[0]
+
+    def add_archers_and_range(self):
+        self.tap('ap:catadd:unit')
+        self.feed('archers')
+        self.feed('🏹 کماندار'); self.feed('🏹 Archers'); self.feed('🏹 Okçu')
+        self.feed('0')
+        self.tap('ap:catadd:building')
+        self.feed('archery_range')
+        self.feed('میدان تیر'); self.feed('🏹 Archery Range'); self.feed('Okçu Alanı')
+        self.feed('0')
+        self.tap('ap:catprod:archers')
+        self.feed('400')
+        self.tap('ap:catcosts:archery_range:wood')
+        self.feed('300')
+
+    def test_the_new_unit_reaches_the_player_assets_screen(self):
+        self.add_archers_and_range()
+        self.bot.sent.clear()
+        self.tap('assets', user_id=self.LORD)
+        text = self.bot.last_sent_text()
+        # main.py is the Persian build, so the Persian label is what players see.
+        self.assertIn('🏹 کماندار', text)
+        self.assertIn('میدان تیر', text)
+
+    def test_the_new_camp_appears_in_the_upgrade_menu(self):
+        self.add_archers_and_range()
+        self.tap('upgrade', user_id=self.LORD)
+        self.assertIn('ag:upc:archery_range', self.bot.last_keyboard())
+
+    def test_the_new_camp_charges_the_cost_the_admin_set(self):
+        self.add_archers_and_range()
+        self.module.conn.execute("UPDATE users SET wood=500 WHERE group_id=?", (self.GROUP,))
+        self.module.conn.commit()
+        self.tap('ag:upy:archery_range', user_id=self.LORD)
+        self.assertEqual(self.value('archery_range'), 1)
+        self.assertEqual(self.value('wood'), 200)
+
+    def test_the_new_camp_trains_the_new_unit_on_the_weekly_update(self):
+        self.add_archers_and_range()
+        self.module.conn.execute("UPDATE users SET archery_range=2 WHERE group_id=?",
+                                 (self.GROUP,))
+        self.module.conn.commit()
+        self.tap('weekly_update')
+        self.assertEqual(self.value('archers'), 800)
+
+    def test_the_new_unit_shows_in_the_admin_military_screen(self):
+        self.add_archers_and_range()
+        self.tap('ap:mil')
+        self.assertIn('🏹 کماندار', self.bot.edits[-1][2])
+
+    def test_a_player_cannot_add_a_type(self):
+        self.tap('ap:catadd:unit', user_id=self.LORD)
+        self.assertNotIn('archers', self.module.asset_ui.catalog.all_keys())
 
 
 class WarFlowTest(unittest.TestCase):

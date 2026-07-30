@@ -20,6 +20,7 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 - [Özellikler](#-özellikler)
 - [Oyun Mekanikleri](#-oyun-mekanikleri)
 - [Yönetim Paneli](#️-yönetim-paneli)
+- [Varlık Kataloğu](#-varlık-kataloğu)
 - [Başlarken](#-başlarken)
   - [Gereksinimler](#gereksinimler)
   - [Kurulum](#kurulum)
@@ -48,6 +49,7 @@ Telegram grupları için **çok oyunculu stratejik kaynak yönetimi oyun botu**.
 | 🛡️ **Saldırı ve Savunma** | Detaylı saldırı takibi ile askeri seferleri planlama ve kaydetme |
 | 🚢 **Dünya Ticareti** | Okyanuslar, boğazlar, kanallar ve İpek Yolu geçitlerinden oluşan dünya haritasında deniz ve kara yoluyla diğer lordlara mal gönderme — rota seçimi, geçiş ücretleri, boğaz sahipliği ve canlı sevkiyat takibi |
 | 🛡️ **Yönetim Paneli** | Satır içi `/admin` paneli: oyuncu ve dünya istatistikleri, ekonomi ve askeri özetler, bölüm başına aç/kapat anahtarları, yönetici işlem kaydı, ek yöneticiler, ülke sıfırlama ve sefer/ticaret fotoğrafları |
+| 🧩 **Özel Varlık Türleri** | Kaynaklar, birimler ve binalar koda değil veriye dayanır. Okçuları, onları eğiten kampı, haftalık üretimini ve yükseltme maliyetini Telegram içinden ekleyin — Python yok, veritabanı taşıması yok |
 | 🔧 **Yönetici Kontrolleri** | Varlık değerlerini ayarlama, haftalık güncellemeleri tetikleme ve konumlar, boğaz sahipliği ile ticaret ayarlarını yönetme |
 
 ---
@@ -97,6 +99,7 @@ Paneli açmak için bir grupta **veya** botun özel sohbetinde `/admin` gönderi
 | ⚙️ **Bölümleri aç/kapat** | Her bölüm için bir anahtar — varlıklar, yükseltme, bildiri, özel mesaj, antlaşma, sefer, ticaret, haftalık güncelleme, lord kaydı. Kapatılan bölüm hem `/start` menüsünden kalkar hem de düğmeleri reddedilir; böylece eski bir menüyle atlatılamaz |
 | 🧾 **İşlem kaydı** | Her yönetici değişikliği — kim, ne, ne zaman — en yeniden eskiye, sayfa başına 10 kayıt |
 | 👑 **Yöneticiler** | *(yalnızca sahip)* Kullanıcının bir mesajını ileterek ya da sayısal kimliğini göndererek yönetici ekleyin ve tekrar çıkarın. Yapılandırmadaki sahip her zaman yöneticidir ve çıkarılamaz |
+| 🧩 **Varlıklar ve birimler** | Kaynak, birim ve bina türlerini ekleyin, yeniden adlandırın, ayarlayın veya kaldırın — [Varlık Kataloğu](#-varlık-kataloğu) |
 | ♻️ **Ülkeyi sıfırla** | Bir grubun kaynaklarını, askerlerini ve binalarını onay adımının ardından başlangıç değerlerine döndürür. Antlaşmalar ve ticaret konumları değişmez; önceki değerler işlem kaydına yazılır |
 | 🖼 **Ticaret fotoğrafı** | Ticaret mesajlarında kullanılan fotoğrafı ayarlayın veya kaldırın |
 | 🖼 **Savaş fotoğrafları** | Kara ve deniz seferi duyuruları için ayrı fotoğraflar ayarlayın veya kaldırın |
@@ -110,6 +113,41 @@ Oyuncular artık kendilerini kaydedemez. Bir yönetici grupta **oyuncunun mesaj�
 ### Seferler ve savaş kanalı
 
 Genel sefer duyuruları **savaş kanalına** (`WAR_CHANNEL_ID`) gider ve yalnızca komutanı, çıkış noktasını, hedefi ve varış zamanını içerir. Oyuncunun yazdığı ordu bilgileri dahil tam rapor, sahibe ve tüm yöneticilere özel olarak gönderilir.
+
+---
+
+## 🧩 Varlık Kataloğu
+
+Bir ülkenin sahip olabileceği her şey — her kaynak, birim ve bina — Python koduna değil veritabanına yazılıdır. Yönetim panelindeki **🧩 Varlıklar ve birimler** oyunun şeklini belirlediğiniz yerdir.
+
+### Okçu eklemek
+
+1. 🧩 Varlıklar ve birimler → ⚔️ Birimler → ➕ Yeni tür ekle
+2. Dahili anahtar: `archers` · Farsça, İngilizce ve Türkçe görünen adlar · başlangıç miktarı
+3. 🧩 bölümüne dönün → 🏭 Binalar → ➕ Yeni tür ekle → `archery_range`, ürettiği şey olarak **Okçu**'yu seçin ve seviye başına haftalık üretimi girin
+4. Yeni binayı açın → 💸 Yükseltme maliyeti → bir seviyenin her kaynaktan ne kadara mal olduğunu belirleyin
+
+Okçular artık varlıklar ekranında, yükseltme menüsünde, haftalık üretim döngüsünde, askeri özette ve yönetici varlık düzenleyicisinde görünür. Hiçbir şey yeniden derlenmedi.
+
+### Neleri değiştirebilirsiniz
+
+| Alan | Kapsam | Not |
+|---|---|---|
+| Görünen ad | her şey | Her dil için ayrı ayrı |
+| Başlangıç miktarı | her şey | ♻️ *Ülkeyi sıfırla* bunu kullanır |
+| Üretim | binalar | Ne ürettiği ve haftalık güncellemede seviye başına ne kadar |
+| Yükseltme maliyeti | binalar | Kaynakların herhangi bir birleşimi; sıfır o satırı kaldırır |
+| Ticarete açık | kaynaklar | Konvoyların taşıyıp taşıyamayacağını belirler |
+
+### Yerleşik türler ve kaldırma
+
+Oyunla gelen 8 kaynak, 10 birim ve 18 bina **yerleşik** olarak kaydedilir. Yeniden adlandırılabilir ve ayarlanabilirler ama kaldırılamazlar; çünkü ticaret sistemi ve savaş akışı onlara anahtarla atıfta bulunur.
+
+Özel bir türü kaldırmak onu **gizler**: her menüden çıkar ama veritabanı sütunu ve sayıları kalır. Geri getirdiğinizde değerler geri döner. Hiçbir şey yok edilmez ve çalışan hiçbir tablo yeniden oluşturulmaz.
+
+### Bunun düzelttiği bir hata
+
+Yükseltme maliyetleri eskiden üç bot dosyasının her birinde iki kez yazılıydı — biri karşılanabilirliği sınamak, diğeri düşmek için. **Altın madeni, çiftlik, hayvan çiftliği, kılıçlı asker kampı ve özel muhafız kampı** için bu iki liste farklı kaynakları adlandırıyordu; yani bir yükseltme demirinize göre onaylanıp sahip olmadığınız odunla ödenebiliyor ve bakiyeyi eksiye düşürebiliyordu. Artık tek bir maliyet tablosu her ikisini de yürütüyor ve her şey tek bir işlemde uygulanıyor.
 
 ---
 
@@ -213,7 +251,7 @@ cd tests
 python -m unittest discover -s . -t .
 ```
 
-Yapılandırma çözümlemesini, erişim denetimini, bölüm anahtarlarını, işlem kaydını, istatistikleri, ülke sıfırlamayı, lord atamayı, sağdan sola ok yönünü, fotoğraf işlemeyi ve üç giriş dosyasının uçtan uca yüklenmesini kapsar.
+Yapılandırma çözümlemesini, erişim denetimini, bölüm anahtarlarını, işlem kaydını, istatistikleri, ülke sıfırlamayı, lord atamayı, sağdan sola ok yönünü, fotoğraf işlemeyi, varlık kataloğunu (ekleme, ayarlama, gizleme, yükseltme muhasebesi) ve üç giriş dosyasının uçtan uca yüklenmesini kapsar — panelden okçu eklemek ve bir oyuncunun onları eğitebildiğini doğrulamak dahil.
 
 ---
 
@@ -226,7 +264,10 @@ Telegram-Strategic-GameBot/
 ├── main-tr.py        # Bot (Türkçe) — aynı mantık, Türkçe arayüz
 ├── bot_config.py     # Jeton / sahip / kanal kimlikleri: ortam → bot_config.json → terminal sorusu
 ├── admin_panel.py    # Satır içi /admin paneli: erişim, istatistik, anahtarlar, kayıt, sıfırlama
-├── admin_strings.py  # Varlık sütunu bilgileri ve panelin üç dildeki metinleri
+├── admin_strings.py  # Panelin üç dildeki metinleri
+├── asset_catalog.py  # Kaynaklar, birimler ve binalar veri olarak: başlangıç, maliyet, üretim
+├── asset_admin.py    # Katalog türlerini eklemek ve ayarlamak için panel ekranları
+├── asset_ui.py       # Oyuncu ekranları: varlıklar, yükseltme, haftalık üretim, varlık düzenleyici
 ├── trade_system.py   # Üç botun paylaştığı dünya ticareti motoru (dünya haritası, rotalama, geçiş ücretleri, canlı takip)
 ├── tests/            # Çevrimdışı test paketi (sahte bot + bellek içi SQLite)
 ├── LICENSE           # MIT Lisansı

@@ -20,6 +20,7 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 - [Features](#-features)
 - [Game Mechanics](#-game-mechanics)
 - [Admin Dashboard](#-admin-dashboard)
+- [Asset Catalog](#-asset-catalog)
 - [Bot Language](#-bot-language)
 - [Getting Started](#-getting-started)
   - [Prerequisites](#prerequisites)
@@ -49,6 +50,7 @@ A **multiplayer strategic resource-management game bot** for Telegram groups. Pl
 | 🛡️ **Attack & Defense** | Plan and record military campaigns with detailed attack tracking |
 | 🚢 **World Trade** | Send goods to other lords by sea or land across a world map of oceans, straits, canals and Silk-Road passes — route choice, tolls, chokepoint ownership, and live convoy tracking |
 | 🛡️ **Admin Dashboard** | An inline `/admin` panel: player and world statistics, economy and military overviews, per-feature on/off switches, an admin action log, extra admins, country reset, and campaign/trade photos |
+| 🧩 **Custom Asset Types** | Resources, units and buildings are data, not code. Add archers, their training camp, its weekly output and its upgrade cost from inside Telegram — no Python, no migration |
 | 🔧 **Admin Controls** | Adjust asset values, trigger weekly updates, and manage trade locations, chokepoint owners, and trade settings |
 
 ---
@@ -98,6 +100,7 @@ Send `/admin` in a group **or** in the bot's private chat to open the dashboard.
 | ⚙️ **Enable/disable sections** | One switch per feature — assets, upgrade, statement, private message, treaty, campaign, trade, weekly update, lord registration. A disabled section vanishes from the `/start` menu **and** its callbacks are refused, so an old open menu cannot be used to get around it |
 | 🧾 **Action log** | Every admin change — who, what, when — newest first, 10 per page |
 | 👑 **Admins** | *(owner only)* Promote extra admins by forwarding one of their messages or sending their numeric id, and demote them again. The owner from the configuration is always an admin and cannot be removed |
+| 🧩 **Assets & units** | Add, rename, retune or remove resource, unit and building types — see [Asset Catalog](#-asset-catalog) |
 | ♻️ **Reset a country** | Return one group's resources, troops and buildings to their starting values, behind a confirmation step. Treaties and trade locations are left alone, and the previous values are written to the action log |
 | 🖼 **Trade photo** | Set or clear the photo used on trade messages |
 | 🖼 **War photos** | Set or clear separate photos for land and sea campaign announcements |
@@ -111,6 +114,41 @@ Players can no longer register themselves. An admin **replies to the player's me
 ### Campaigns and the war channel
 
 Public campaign announcements go to the **war channel** (`WAR_CHANNEL_ID`) and carry only the commander, origin, destination and arrival time. The full report, including the army details the player typed, is sent privately to the owner and every admin.
+
+---
+
+## 🧩 Asset Catalog
+
+Everything a country can own — every resource, unit and building — lives in the database rather than in Python literals. **Assets & units** in the admin panel is where you shape the game.
+
+### Adding archers
+
+1. 🧩 Assets & units → ⚔️ Units → ➕ Add a new type
+2. Internal key: `archers` · display name in Persian, English and Turkish · starting amount
+3. Back to 🧩 → 🏭 Buildings → ➕ Add a new type → `archery_range`, pick **Archers** as what it produces, and how many per level per weekly update
+4. Open the new building → 💸 Upgrade cost → set what one level costs in each resource
+
+Archers now appear in the assets screen, the upgrade menu, the weekly production cycle, the military overview and the admin asset editor. Nothing was recompiled.
+
+### What you can change
+
+| Field | Applies to | Notes |
+|---|---|---|
+| Display name | everything | Independently per language |
+| Starting amount | everything | Used by ♻️ *Reset a country* |
+| Produces / output | buildings | Which type it yields and how much per level per weekly update |
+| Upgrade cost | buildings | Any combination of resources; zero removes a line |
+| Tradeable | resources | Controls whether convoys can carry it |
+
+### Built-ins and removal
+
+The 8 resources, 10 units and 18 buildings that shipped with the game are seeded as **built-in**. They can be renamed and retuned but not removed, because the trade system and the war flow refer to them by key.
+
+Removing a custom type **hides** it: it disappears from every menu, but its database column and its numbers stay. Restoring it brings the values back. Nothing is destroyed, and no live table is rebuilt.
+
+### A bug this fixed
+
+Upgrade costs used to be written twice in each of the three bot files — once to test affordability, once to deduct. For **gold mine, farm, animal farm, swordsman camp and special guard camp** the two lists named different resources, so an upgrade could be approved against your iron and paid for with wood you did not have, driving the balance negative. There is now one cost table driving both, applied in a single transaction.
 
 ---
 
@@ -228,7 +266,7 @@ cd tests
 python -m unittest discover -s . -t .
 ```
 
-It covers configuration resolution, access control, feature toggles, the action log, statistics, country reset, lord appointment, the RTL arrow direction, photo handling, and loads all three entry points end to end.
+It covers configuration resolution, access control, feature toggles, the action log, statistics, country reset, lord appointment, the RTL arrow direction, photo handling, the asset catalog (adding, retuning, hiding, upgrade accounting) and loads all three entry points end to end — including adding archers through the panel and checking a player can then train them.
 
 ---
 
@@ -241,7 +279,10 @@ Telegram-Strategic-GameBot/
 ├── main-tr.py        # Bot (Turkish / Türkçe) — same logic, Turkish interface
 ├── bot_config.py     # Token / owner / channel ids: environment → bot_config.json → prompt
 ├── admin_panel.py    # Inline /admin dashboard: access, statistics, toggles, log, reset
-├── admin_strings.py  # Asset column metadata and the dashboard's text in all three languages
+├── admin_strings.py  # The dashboard's text in all three languages
+├── asset_catalog.py  # Resources, units and buildings as data: seeding, costs, production
+├── asset_admin.py    # Panel screens for adding and retuning catalog types
+├── asset_ui.py       # Player screens: assets, upgrades, weekly production, asset editor
 ├── trade_system.py   # World trade engine shared by all three bots (map graphs, routing, tolls, live tracking)
 ├── tests/            # Offline test suite (stub bot + in-memory SQLite)
 ├── LICENSE           # MIT License

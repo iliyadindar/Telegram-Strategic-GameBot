@@ -1,92 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Column metadata and localised text for the admin dashboard.
+"""Localised text for the admin dashboard.
 
 Kept apart from admin_panel.py so the panel file stays about behaviour. Every
 language must define exactly the same key set — admin_panel.init() asserts it.
+
+Asset names are *not* here: resources, units and buildings are data now, so
+their labels live in the asset_labels table. See asset_catalog.py.
 """
-
-# ---------------------------------------------------------------------------
-# Asset columns. Order here is the order shown on screen; the DEFAULT values
-# mirror the CREATE TABLE defaults in main*.py and drive "reset to initial".
-# ---------------------------------------------------------------------------
-
-RESOURCE_COLS = ('money', 'gold', 'iron', 'stones', 'wood', 'food', 'meat', 'clothes')
-RESOURCE_DEFAULT = 2000
-
-UNIT_COLS = ('swordsmen', 'gunmen', 'cavalry_swordsmen', 'cavalry_gunmen', 'special_guard',
-             'medium_cannons', 'large_cannons', 'small_ships', 'medium_ships', 'large_ships')
-UNIT_DEFAULT = 1500
-
-BUILDING_COLS = ('stone_factory', 'wood_factory', 'iron_factory', 'gold_mine', 'farm',
-                 'animal_farm', 'clothes_factory', 'bank', 'swordsmen_camp', 'gunmen_camp',
-                 'cavalry_swordsmen_camp', 'cavalry_gunmen_camp', 'special_guard_camp',
-                 'medium_cannon_factory', 'large_cannon_factory', 'small_shipyard',
-                 'medium_shipyard', 'large_shipyard')
-BUILDING_DEFAULT = 0
-
-ALL_COLS = RESOURCE_COLS + UNIT_COLS + BUILDING_COLS
-
-DEFAULTS = {}
-DEFAULTS.update({c: RESOURCE_DEFAULT for c in RESOURCE_COLS})
-DEFAULTS.update({c: UNIT_DEFAULT for c in UNIT_COLS})
-DEFAULTS.update({c: BUILDING_DEFAULT for c in BUILDING_COLS})
-
-COL_NAMES = {
-    'fa': {
-        'money': '💵 پول', 'gold': '🏅 طلا', 'iron': '🪛 آهن', 'stones': '🪨 سنگ',
-        'wood': '🌲 چوب', 'food': '🍞 غذا', 'meat': '🍖 گوشت', 'clothes': '🥋 لباس',
-        'swordsmen': '🗡️ سرباز شمشیرزن', 'gunmen': '🔫 سرباز تفنگدار',
-        'cavalry_swordsmen': '🗡️ سواره‌نظام شمشیرزن', 'cavalry_gunmen': '🔫 سواره‌نظام تفنگدار',
-        'special_guard': '🛡️ گارد ویژه', 'medium_cannons': '🎯 توپ متوسط',
-        'large_cannons': '🎯 توپ بزرگ', 'small_ships': '⛵ کشتی کوچک',
-        'medium_ships': '🚢 کشتی متوسط', 'large_ships': '🛳️ کشتی بزرگ',
-        'stone_factory': 'کارخونه سنگ', 'wood_factory': 'کارخونه چوب',
-        'iron_factory': 'کارخونه آهن', 'gold_mine': 'معدن طلا', 'farm': 'زمین کشاورزی',
-        'animal_farm': 'دامداری', 'clothes_factory': 'کارخانه لباس', 'bank': '🏦 بانک',
-        'swordsmen_camp': 'کمپ سرباز شمشیرزن', 'gunmen_camp': 'کمپ سرباز تفنگدار',
-        'cavalry_swordsmen_camp': 'کمپ سواره‌نظام شمشیرزن',
-        'cavalry_gunmen_camp': 'کمپ سواره‌نظام تفنگدار', 'special_guard_camp': 'کمپ گارد ویژه',
-        'medium_cannon_factory': 'کارخانه توپ متوسط', 'large_cannon_factory': 'کارخانه توپ بزرگ',
-        'small_shipyard': 'کشتی‌سازی کوچک', 'medium_shipyard': 'کشتی‌سازی متوسط',
-        'large_shipyard': 'کشتی‌سازی بزرگ',
-    },
-    'en': {
-        'money': '💵 Money', 'gold': '🏅 Gold', 'iron': '🪛 Iron', 'stones': '🪨 Stone',
-        'wood': '🌲 Wood', 'food': '🍞 Food', 'meat': '🍖 Meat', 'clothes': '🥋 Clothes',
-        'swordsmen': '🗡️ Swordsmen', 'gunmen': '🔫 Gunmen',
-        'cavalry_swordsmen': '🗡️ Cavalry Swordsmen', 'cavalry_gunmen': '🔫 Cavalry Gunmen',
-        'special_guard': '🛡️ Special Guard', 'medium_cannons': '🎯 Medium Cannons',
-        'large_cannons': '🎯 Large Cannons', 'small_ships': '⛵ Small Ships',
-        'medium_ships': '🚢 Medium Ships', 'large_ships': '🛳️ Large Ships',
-        'stone_factory': 'Stone Factory', 'wood_factory': 'Wood Factory',
-        'iron_factory': 'Iron Factory', 'gold_mine': 'Gold Mine', 'farm': 'Farm',
-        'animal_farm': 'Animal Farm', 'clothes_factory': 'Clothes Factory', 'bank': '🏦 Bank',
-        'swordsmen_camp': 'Swordsman Camp', 'gunmen_camp': 'Gunman Camp',
-        'cavalry_swordsmen_camp': 'Cavalry Swordsman Camp',
-        'cavalry_gunmen_camp': 'Cavalry Gunman Camp', 'special_guard_camp': 'Special Guard Camp',
-        'medium_cannon_factory': 'Medium Cannon Factory',
-        'large_cannon_factory': 'Large Cannon Factory', 'small_shipyard': 'Small Shipyard',
-        'medium_shipyard': 'Medium Shipyard', 'large_shipyard': 'Large Shipyard',
-    },
-    'tr': {
-        'money': '💵 Para', 'gold': '🏅 Altın', 'iron': '🪛 Demir', 'stones': '🪨 Taş',
-        'wood': '🌲 Odun', 'food': '🍞 Yiyecek', 'meat': '🍖 Et', 'clothes': '🥋 Giysi',
-        'swordsmen': '🗡️ Kılıçlı Asker', 'gunmen': '🔫 Tüfekçi',
-        'cavalry_swordsmen': '🗡️ Atlı Kılıçlı', 'cavalry_gunmen': '🔫 Atlı Tüfekçi',
-        'special_guard': '🛡️ Özel Muhafız', 'medium_cannons': '🎯 Orta Top',
-        'large_cannons': '🎯 Büyük Top', 'small_ships': '⛵ Küçük Gemi',
-        'medium_ships': '🚢 Orta Gemi', 'large_ships': '🛳️ Büyük Gemi',
-        'stone_factory': 'Taş Fabrikası', 'wood_factory': 'Odun Fabrikası',
-        'iron_factory': 'Demir Fabrikası', 'gold_mine': 'Altın Madeni', 'farm': 'Çiftlik',
-        'animal_farm': 'Hayvan Çiftliği', 'clothes_factory': 'Giysi Fabrikası', 'bank': '🏦 Banka',
-        'swordsmen_camp': 'Kılıçlı Asker Kampı', 'gunmen_camp': 'Tüfekçi Kampı',
-        'cavalry_swordsmen_camp': 'Atlı Kılıçlı Kampı',
-        'cavalry_gunmen_camp': 'Atlı Tüfekçi Kampı', 'special_guard_camp': 'Özel Muhafız Kampı',
-        'medium_cannon_factory': 'Orta Top Fabrikası', 'large_cannon_factory': 'Büyük Top Fabrikası',
-        'small_shipyard': 'Küçük Tersane', 'medium_shipyard': 'Orta Tersane',
-        'large_shipyard': 'Büyük Tersane',
-    },
-}
 
 # ---------------------------------------------------------------------------
 # Toggleable features. The key is what main*.py passes to feature_enabled().
@@ -98,7 +18,13 @@ FEATURES = ('assets', 'upgrade', 'statement', 'private_message', 'treaty',
 # Actions written to admin_log; label lives under 'act_<name>' in STRINGS.
 ACTIONS = ('asset_edit', 'feature_toggle', 'weekly_update', 'reset_country', 'lord_assign',
            'admin_add', 'admin_remove', 'trade_photo', 'war_photo',
-           'trade_config', 'chokepoint_owner', 'group_home')
+           'trade_config', 'chokepoint_owner', 'group_home',
+           'asset_add', 'asset_type_edit', 'asset_hide', 'asset_cost')
+
+# CatalogError codes that get their own message; anything else falls back to
+# 'err_generic'. Kept next to the strings so the two stay in step.
+CATALOG_ERRORS = ('bad_key', 'exists', 'reserved', 'column_exists', 'bad_kind', 'builtin',
+                  'bad_produces', 'not_a_building', 'not_a_resource', 'bad_resource', 'unknown')
 
 STRINGS = {
     'fa': {
@@ -203,6 +129,72 @@ STRINGS = {
         'setlord_bot_target': "نمی‌توان یک ربات را به عنوان لرد ثبت کرد.",
         'setlord_done': "👤 {u} به عنوان لرد این گروه ثبت شد.",
         'setlord_already': "👤 {u} از قبل لرد این گروه است.",
+        'act_asset_add': "افزودن نوع دارایی",
+        'act_asset_type_edit': "ویرایش نوع دارایی",
+        'act_asset_hide': "حذف نوع دارایی",
+        'act_asset_cost': "هزینه ارتقا",
+        'btn_catalog': "🧩 دارایی‌ها و واحدها",
+        'cat_title': "🧩 فهرست دارایی‌های بازی — یک دسته را انتخاب کنید:\n"
+                     "<blockquote>📦 منابع: {resources}\n⚔️ واحدها: {units}\n"
+                     "🏭 ساختمان‌ها: {buildings}</blockquote>",
+        'kind_resource': "📦 منابع",
+        'kind_unit': "⚔️ واحدها",
+        'kind_building': "🏭 ساختمان‌ها",
+        'cat_list_title': "{kind} (صفحه {p} از {n}) — برای ویرایش روی یکی بزنید:",
+        'cat_hidden_mark': "🚫",
+        'btn_cat_add': "➕ افزودن نوع جدید",
+        'cat_entry': "🧩 <b>{label}</b>\n<blockquote>🔑 کلید: <code>{key}</code>\n"
+                     "📁 دسته: {kind}\n🎁 مقدار اولیه: {default}\n{extra}</blockquote>{note}",
+        'cat_extra_building': "🏭 تولید می‌کند: {produces}\n📈 تولید هر سطح در هفته: {output}\n"
+                              "💸 هزینه ارتقا: {costs}",
+        'cat_extra_resource': "🚢 قابل تجارت: {tradeable}",
+        'cat_produces_none': "چیزی تولید نمی‌کند",
+        'cat_costs_none': "رایگان",
+        'cat_builtin_note': "\n\nℹ️ این نوع همراه بازی آمده است؛ قابل ویرایش هست اما حذف نمی‌شود.",
+        'cat_hidden_note': "\n\n🚫 این نوع از بازی حذف شده است. مقادیر ذخیره‌شده دست‌نخورده‌اند و "
+                           "با بازگرداندن دوباره ظاهر می‌شوند.",
+        'btn_cat_rename': "✏️ تغییر نام",
+        'btn_cat_default': "🎁 مقدار اولیه",
+        'btn_cat_output': "📈 تولید",
+        'btn_cat_tradeable': "🚢 قابل تجارت",
+        'btn_cat_costs': "💸 هزینه ارتقا",
+        'btn_cat_hide': "🗑 حذف از بازی",
+        'btn_cat_unhide': "♻️ بازگرداندن به بازی",
+        'cat_ask_key': "کلید انگلیسی نوع جدید را بفرستید (حروف کوچک و زیرخط، مثل archers):",
+        'cat_ask_label': "نام نمایشی به {lang} را بفرستید (می‌توانید ایموجی هم بگذارید):",
+        'cat_ask_default': "مقدار اولیه هر کشور برای این نوع را وارد کنید:",
+        'cat_bad_number': "مقدار معتبر نیست. یک عدد صحیح غیرمنفی بفرستید.",
+        'cat_ask_output': "در هر آپ هفتگی، هر سطح این ساختمان چه مقدار تولید کند؟",
+        'cat_ask_cost': "هزینه ارتقا بر حسب {res} چقدر باشد؟ (صفر یعنی نیازی نیست)",
+        'cat_pick_produces': "این ساختمان چه چیزی تولید می‌کند؟",
+        'btn_produces_none': "🚫 هیچ‌چیز",
+        'cat_costs_title': "💸 هزینه یک سطح از {label} — برای تغییر روی هر منبع بزنید:",
+        'cat_added': "✅ «{label}» به بازی اضافه شد.",
+        'cat_renamed': "✅ نام‌ها به‌روزرسانی شد.",
+        'cat_default_set': "✅ مقدار اولیه روی {value} تنظیم شد.",
+        'cat_output_set': "✅ تولید به‌روزرسانی شد.",
+        'cat_tradeable_on': "✅ این منبع اکنون قابل تجارت است.",
+        'cat_tradeable_off': "🚫 این منبع دیگر قابل تجارت نیست.",
+        'cat_cost_set': "✅ هزینه به‌روزرسانی شد.",
+        'cat_hidden': "🗑 «{label}» از بازی حذف شد.",
+        'cat_unhidden': "♻️ «{label}» به بازی بازگشت.",
+        'cat_lang_fa': "فارسی",
+        'cat_lang_en': "انگلیسی",
+        'cat_lang_tr': "ترکی",
+        'cat_yes': "بله",
+        'cat_no': "خیر",
+        'cat_err_bad_key': "❌ کلید نامعتبر است. فقط حروف کوچک انگلیسی، عدد و زیرخط؛ "
+                           "با حرف شروع شود و بین ۲ تا ۳۱ کاراکتر باشد.",
+        'cat_err_exists': "❌ نوعی با این کلید از قبل وجود دارد.",
+        'cat_err_reserved': "❌ این کلید رزرو شده است.",
+        'cat_err_column_exists': "❌ ستونی با این نام از قبل در پایگاه داده هست.",
+        'cat_err_bad_kind': "❌ دسته نامعتبر است.",
+        'cat_err_builtin': "❌ انواع پیش‌فرض بازی قابل حذف نیستند.",
+        'cat_err_bad_produces': "❌ یک ساختمان فقط می‌تواند منبع یا واحد تولید کند.",
+        'cat_err_not_a_building': "❌ این مورد ساختمان نیست.",
+        'cat_err_not_a_resource': "❌ این مورد منبع نیست.",
+        'cat_err_bad_resource': "❌ منبع نامعتبر است.",
+        'cat_err_unknown': "❌ چنین نوعی وجود ندارد.",
     },
     'en': {
         'not_admin': "You are not an admin.",
@@ -306,6 +298,72 @@ STRINGS = {
         'setlord_bot_target': "A bot cannot be registered as a lord.",
         'setlord_done': "👤 {u} has been registered as the lord of this group.",
         'setlord_already': "👤 {u} is already the lord of this group.",
+        'act_asset_add': "asset type added",
+        'act_asset_type_edit': "asset type edited",
+        'act_asset_hide': "asset type removed",
+        'act_asset_cost': "upgrade cost",
+        'btn_catalog': "🧩 Assets & units",
+        'cat_title': "🧩 The game's asset catalog — pick a category:\n"
+                     "<blockquote>📦 Resources: {resources}\n⚔️ Units: {units}\n"
+                     "🏭 Buildings: {buildings}</blockquote>",
+        'kind_resource': "📦 Resources",
+        'kind_unit': "⚔️ Units",
+        'kind_building': "🏭 Buildings",
+        'cat_list_title': "{kind} (page {p} of {n}) — tap one to edit it:",
+        'cat_hidden_mark': "🚫",
+        'btn_cat_add': "➕ Add a new type",
+        'cat_entry': "🧩 <b>{label}</b>\n<blockquote>🔑 Key: <code>{key}</code>\n"
+                     "📁 Category: {kind}\n🎁 Starting amount: {default}\n{extra}</blockquote>{note}",
+        'cat_extra_building': "🏭 Produces: {produces}\n📈 Per level per week: {output}\n"
+                              "💸 Upgrade cost: {costs}",
+        'cat_extra_resource': "🚢 Tradeable: {tradeable}",
+        'cat_produces_none': "nothing",
+        'cat_costs_none': "free",
+        'cat_builtin_note': "\n\nℹ️ This type shipped with the game — it can be retuned but not removed.",
+        'cat_hidden_note': "\n\n🚫 This type has been removed from the game. Its stored values are "
+                           "untouched and come back if you restore it.",
+        'btn_cat_rename': "✏️ Rename",
+        'btn_cat_default': "🎁 Starting amount",
+        'btn_cat_output': "📈 Production",
+        'btn_cat_tradeable': "🚢 Tradeable",
+        'btn_cat_costs': "💸 Upgrade cost",
+        'btn_cat_hide': "🗑 Remove from the game",
+        'btn_cat_unhide': "♻️ Restore to the game",
+        'cat_ask_key': "Send the internal key for the new type (lowercase and underscores, e.g. archers):",
+        'cat_ask_label': "Send the display name in {lang} (emoji are welcome):",
+        'cat_ask_default': "How much of this should each country start with?",
+        'cat_bad_number': "That is not a valid amount. Send a non-negative whole number.",
+        'cat_ask_output': "How much should each level of this building produce per weekly update?",
+        'cat_ask_cost': "How much {res} should one upgrade cost? (zero means none)",
+        'cat_pick_produces': "What does this building produce?",
+        'btn_produces_none': "🚫 Nothing",
+        'cat_costs_title': "💸 Cost of one level of {label} — tap a resource to change it:",
+        'cat_added': "✅ “{label}” was added to the game.",
+        'cat_renamed': "✅ The names were updated.",
+        'cat_default_set': "✅ The starting amount is now {value}.",
+        'cat_output_set': "✅ Production updated.",
+        'cat_tradeable_on': "✅ This resource can now be traded.",
+        'cat_tradeable_off': "🚫 This resource can no longer be traded.",
+        'cat_cost_set': "✅ The cost was updated.",
+        'cat_hidden': "🗑 “{label}” was removed from the game.",
+        'cat_unhidden': "♻️ “{label}” is back in the game.",
+        'cat_lang_fa': "Persian",
+        'cat_lang_en': "English",
+        'cat_lang_tr': "Turkish",
+        'cat_yes': "yes",
+        'cat_no': "no",
+        'cat_err_bad_key': "❌ Invalid key. Lowercase letters, digits and underscores only; "
+                           "must start with a letter and be 2 to 31 characters long.",
+        'cat_err_exists': "❌ A type with that key already exists.",
+        'cat_err_reserved': "❌ That key is reserved.",
+        'cat_err_column_exists': "❌ A database column with that name already exists.",
+        'cat_err_bad_kind': "❌ Invalid category.",
+        'cat_err_builtin': "❌ Types that shipped with the game cannot be removed.",
+        'cat_err_bad_produces': "❌ A building can only produce a resource or a unit.",
+        'cat_err_not_a_building': "❌ That entry is not a building.",
+        'cat_err_not_a_resource': "❌ That entry is not a resource.",
+        'cat_err_bad_resource': "❌ Invalid resource.",
+        'cat_err_unknown': "❌ No such type.",
     },
     'tr': {
         'not_admin': "Yönetici değilsiniz.",
@@ -409,5 +467,71 @@ STRINGS = {
         'setlord_bot_target': "Bir bot lord olarak kaydedilemez.",
         'setlord_done': "👤 {u} bu grubun lordu olarak kaydedildi.",
         'setlord_already': "👤 {u} zaten bu grubun lordu.",
+        'act_asset_add': "varlık türü eklendi",
+        'act_asset_type_edit': "varlık türü düzenlendi",
+        'act_asset_hide': "varlık türü kaldırıldı",
+        'act_asset_cost': "yükseltme maliyeti",
+        'btn_catalog': "🧩 Varlıklar ve birimler",
+        'cat_title': "🧩 Oyunun varlık kataloğu — bir kategori seçin:\n"
+                     "<blockquote>📦 Kaynaklar: {resources}\n⚔️ Birimler: {units}\n"
+                     "🏭 Binalar: {buildings}</blockquote>",
+        'kind_resource': "📦 Kaynaklar",
+        'kind_unit': "⚔️ Birimler",
+        'kind_building': "🏭 Binalar",
+        'cat_list_title': "{kind} ({p}/{n}. sayfa) — düzenlemek için birine dokunun:",
+        'cat_hidden_mark': "🚫",
+        'btn_cat_add': "➕ Yeni tür ekle",
+        'cat_entry': "🧩 <b>{label}</b>\n<blockquote>🔑 Anahtar: <code>{key}</code>\n"
+                     "📁 Kategori: {kind}\n🎁 Başlangıç miktarı: {default}\n{extra}</blockquote>{note}",
+        'cat_extra_building': "🏭 Ürettiği: {produces}\n📈 Seviye başına haftalık: {output}\n"
+                              "💸 Yükseltme maliyeti: {costs}",
+        'cat_extra_resource': "🚢 Ticarete açık: {tradeable}",
+        'cat_produces_none': "hiçbir şey",
+        'cat_costs_none': "ücretsiz",
+        'cat_builtin_note': "\n\nℹ️ Bu tür oyunla birlikte gelir — ayarlanabilir ama kaldırılamaz.",
+        'cat_hidden_note': "\n\n🚫 Bu tür oyundan kaldırıldı. Kayıtlı değerleri korunuyor ve "
+                           "geri getirildiğinde yeniden görünecek.",
+        'btn_cat_rename': "✏️ Yeniden adlandır",
+        'btn_cat_default': "🎁 Başlangıç miktarı",
+        'btn_cat_output': "📈 Üretim",
+        'btn_cat_tradeable': "🚢 Ticarete açık",
+        'btn_cat_costs': "💸 Yükseltme maliyeti",
+        'btn_cat_hide': "🗑 Oyundan kaldır",
+        'btn_cat_unhide': "♻️ Oyuna geri getir",
+        'cat_ask_key': "Yeni tür için dahili anahtarı gönderin (küçük harf ve alt çizgi, örn. archers):",
+        'cat_ask_label': "{lang} dilindeki görünen adı gönderin (emoji kullanabilirsiniz):",
+        'cat_ask_default': "Her ülke bundan ne kadarla başlasın?",
+        'cat_bad_number': "Geçersiz miktar. Negatif olmayan bir tam sayı gönderin.",
+        'cat_ask_output': "Bu binanın her seviyesi haftalık güncellemede ne kadar üretsin?",
+        'cat_ask_cost': "Bir yükseltme ne kadar {res} tutsun? (sıfır: gerekmez)",
+        'cat_pick_produces': "Bu bina ne üretiyor?",
+        'btn_produces_none': "🚫 Hiçbir şey",
+        'cat_costs_title': "💸 {label} için bir seviyenin maliyeti — değiştirmek için bir kaynağa dokunun:",
+        'cat_added': "✅ “{label}” oyuna eklendi.",
+        'cat_renamed': "✅ Adlar güncellendi.",
+        'cat_default_set': "✅ Başlangıç miktarı artık {value}.",
+        'cat_output_set': "✅ Üretim güncellendi.",
+        'cat_tradeable_on': "✅ Bu kaynak artık ticarete açık.",
+        'cat_tradeable_off': "🚫 Bu kaynak artık ticarete açık değil.",
+        'cat_cost_set': "✅ Maliyet güncellendi.",
+        'cat_hidden': "🗑 “{label}” oyundan kaldırıldı.",
+        'cat_unhidden': "♻️ “{label}” yeniden oyunda.",
+        'cat_lang_fa': "Farsça",
+        'cat_lang_en': "İngilizce",
+        'cat_lang_tr': "Türkçe",
+        'cat_yes': "evet",
+        'cat_no': "hayır",
+        'cat_err_bad_key': "❌ Geçersiz anahtar. Yalnızca küçük harf, rakam ve alt çizgi; "
+                           "bir harfle başlamalı ve 2-31 karakter olmalı.",
+        'cat_err_exists': "❌ Bu anahtara sahip bir tür zaten var.",
+        'cat_err_reserved': "❌ Bu anahtar ayrılmış.",
+        'cat_err_column_exists': "❌ Bu adda bir veritabanı sütunu zaten var.",
+        'cat_err_bad_kind': "❌ Geçersiz kategori.",
+        'cat_err_builtin': "❌ Oyunla gelen türler kaldırılamaz.",
+        'cat_err_bad_produces': "❌ Bir bina yalnızca kaynak veya birim üretebilir.",
+        'cat_err_not_a_building': "❌ Bu girdi bir bina değil.",
+        'cat_err_not_a_resource': "❌ Bu girdi bir kaynak değil.",
+        'cat_err_bad_resource': "❌ Geçersiz kaynak.",
+        'cat_err_unknown': "❌ Böyle bir tür yok.",
     },
 }

@@ -3,7 +3,7 @@
 
 import sqlite3
 
-from admin_strings import ALL_COLS, DEFAULTS
+import asset_catalog
 
 
 class Chat:
@@ -55,12 +55,14 @@ class StubBot:
         self.replies = []       # (message, text)
         self.next_steps = []    # (message, callback)
         self.handlers = []      # ('message'|'callback', kwargs, fn)
+        self.markups = []       # every reply_markup handed to the bot, in order
         self.polled = False
         self._chats = chats or {}
 
     # --- outgoing -------------------------------------------------------
     def send_message(self, chat_id, text, **kwargs):
         self.sent.append((chat_id, text))
+        self._record_markup(kwargs)
         return Message(Chat(chat_id), User(0), message_id=len(self.sent))
 
     def send_photo(self, chat_id, file_id, caption=None, **kwargs):
@@ -72,6 +74,7 @@ class StubBot:
 
     def edit_message_text(self, text, chat_id, message_id, **kwargs):
         self.edits.append((chat_id, message_id, text))
+        self._record_markup(kwargs)
 
     def edit_message_caption(self, caption=None, chat_id=None, message_id=None, **kwargs):
         self.edits.append((chat_id, message_id, caption))
@@ -105,24 +108,51 @@ class StubBot:
         raise RuntimeError(f'unknown chat {chat_id}')
 
     # --- assertions helpers ---------------------------------------------
+    def _record_markup(self, kwargs):
+        markup = kwargs.get('reply_markup')
+        if markup is not None:
+            self.markups.append(markup)
+
     def last_sent_text(self):
         return self.sent[-1][1] if self.sent else None
 
     def last_answer(self):
         return self.answers[-1] if self.answers else None
 
+    def last_keyboard(self):
+        """callback_data of every button in the most recent keyboard."""
+        if not self.markups:
+            return []
+        return [button.callback_data
+                for row in self.markups[-1].keyboard for button in row]
+
+    def last_button_labels(self):
+        if not self.markups:
+            return []
+        return [button.text for row in self.markups[-1].keyboard for button in row]
+
+
+# The builtin columns, exactly as main*.py declares them. asset_catalog.init()
+# adds anything else the catalog knows about.
+BUILTIN_COLUMNS = (
+    [(key, asset_catalog.RESOURCE_DEFAULT) for key in asset_catalog.BUILTIN_RESOURCES]
+    + [(key, asset_catalog.UNIT_DEFAULT) for key in asset_catalog.BUILTIN_UNITS]
+    + [(key, asset_catalog.BUILDING_DEFAULT) for key, _, _ in asset_catalog.BUILTIN_BUILDINGS]
+)
 
 USERS_SCHEMA = (
     "CREATE TABLE users (user_id INTEGER PRIMARY KEY, group_id INTEGER, "
-    + ', '.join(f"{c} INTEGER DEFAULT {DEFAULTS[c]}" for c in ALL_COLS)
+    + ', '.join(f"{key} INTEGER DEFAULT {default}" for key, default in BUILTIN_COLUMNS)
     + ", treaties TEXT DEFAULT '', home_sea TEXT DEFAULT '', home_land TEXT DEFAULT '')"
 )
 
 
-def make_db():
+def make_db(with_catalog=True):
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     conn.execute(USERS_SCHEMA)
     conn.commit()
+    if with_catalog:
+        asset_catalog.init(conn)
     return conn
 
 

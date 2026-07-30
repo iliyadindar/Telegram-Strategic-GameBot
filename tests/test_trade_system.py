@@ -8,9 +8,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import asset_catalog as catalog
 import trade_system
-from admin_strings import ALL_COLS, DEFAULTS
-from stubs import Chat, Message, StubBot, User, make_db
+from stubs import BUILTIN_COLUMNS, Chat, Message, StubBot, User, make_db
 
 RIGHT_ARROW = '→'   # →
 LEFT_ARROW = '←'    # ←
@@ -166,6 +166,46 @@ class TradePhotoTest(unittest.TestCase):
         self.assertIn('not a photo', self.bot.last_sent_text())
 
 
+class TradeableResourceTest(unittest.TestCase):
+    """The goods list comes from the catalog, not a hardcoded tuple."""
+
+    def setUp(self):
+        self.conn = make_db()
+        self.addCleanup(self.conn.close)
+        self.bot = StubBot(chats={-1: Chat(-1, title='Persia')})
+        trade_system.init(self.bot, self.conn, 1, '@news', lang='en')
+
+    def test_every_builtin_resource_is_offered(self):
+        self.assertEqual(set(trade_system.resource_codes()),
+                         set(catalog.BUILTIN_RESOURCES))
+
+    def test_an_admin_added_resource_becomes_shippable(self):
+        catalog.add('spice', 'resource', {'en': '🌶 Spice'}, default_value=100, tradeable=1)
+        self.assertIn('spice', trade_system.resource_codes())
+
+    def test_a_resource_marked_untradeable_disappears(self):
+        catalog.set_tradeable('gold', 0)
+        self.assertNotIn('gold', trade_system.resource_codes())
+
+    def test_only_tradeable_resources_resolve_to_a_column(self):
+        self.assertEqual(trade_system._res_column('money'), 'money')
+        self.assertIsNone(trade_system._res_column('swordsmen'))
+        self.assertIsNone(trade_system._res_column('nonsense'))
+
+    def test_an_untradeable_resource_stops_resolving(self):
+        catalog.set_tradeable('gold', 0)
+        self.assertIsNone(trade_system._res_column('gold'))
+
+    def test_labels_follow_the_catalog(self):
+        catalog.set_labels('money', {'en': '💰 Coin'})
+        self.assertEqual(trade_system._res_name('money'), '💰 Coin')
+
+    def test_goods_lines_name_each_resource(self):
+        line = trade_system._goods_lines({'money': 10})
+        self.assertIn('Money', line)
+        self.assertIn('10', line)
+
+
 class AdminDelegationTest(unittest.TestCase):
 
     def setUp(self):
@@ -198,19 +238,18 @@ class AdminDelegationTest(unittest.TestCase):
 
 
 class SchemaAgreementTest(unittest.TestCase):
-    """The reset defaults must match the schema the bots actually create."""
+    """The catalog's builtin seed must match the schema the bots actually create."""
 
-    def test_admin_strings_defaults_match_the_users_table_in_main(self):
+    def test_builtin_seed_matches_the_users_table_in_main(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, 'main.py'), encoding='utf-8') as fh:
             source = fh.read()
         block = source.split("CREATE TABLE IF NOT EXISTS users", 1)[1].split("'''", 1)[0]
         declared = dict((m[0], int(m[1]))
                         for m in re.findall(r"(\w+) INTEGER DEFAULT (\d+)", block))
-        for col in ALL_COLS:
-            self.assertIn(col, declared, f'{col} is not a column of users')
-            self.assertEqual(declared[col], DEFAULTS[col],
-                             f'{col} default drifted from the schema')
+        for key, default in BUILTIN_COLUMNS:
+            self.assertIn(key, declared, f'{key} is not a column of users')
+            self.assertEqual(declared[key], default, f'{key} default drifted from the schema')
 
 
 if __name__ == '__main__':

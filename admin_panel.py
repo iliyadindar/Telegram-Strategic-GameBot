@@ -23,8 +23,9 @@ import traceback
 
 from telebot import types
 
-from admin_strings import (ALL_COLS, BUILDING_COLS, COL_NAMES, DEFAULTS, FEATURES,
-                           RESOURCE_COLS, STRINGS, UNIT_COLS)
+import asset_admin
+import asset_catalog as catalog
+from admin_strings import FEATURES, STRINGS
 
 # ---------------------------------------------------------------------------
 # Module state
@@ -61,6 +62,10 @@ def init(bot, conn, owner_id, channel_id, war_channel_id=None, lang='fa', game_m
     _lang = lang
     _game_menu = game_menu
     _migrate()
+    # Resources, units and buildings are data: seed the catalog and make sure
+    # `users` has a column for every type before anything reads them.
+    catalog.init(conn)
+    asset_admin.init(bot, lang, _require_admin, _answer, _show, log, _next_step, _back_row)
 
 
 def _migrate():
@@ -109,7 +114,7 @@ def _esc(text):
 
 
 def _col(name):
-    return COL_NAMES[_lang].get(name, name)
+    return catalog.label(name, _lang)
 
 
 def _num(value):
@@ -313,6 +318,8 @@ def _groups():
 
 
 def _totals(columns):
+    if not columns:
+        return {}
     sums = ', '.join(f"COALESCE(SUM({c}), 0) AS {c}" for c in columns)
     rows = _q(f"SELECT {sums} FROM users")
     return {c: rows[0][c] for c in columns} if rows else {c: 0 for c in columns}
@@ -336,6 +343,8 @@ def _trade_counts(group_id=None):
 
 def _top_group(columns):
     """(group_id, total) for the group with the largest sum over columns."""
+    if not columns:
+        return (None, 0)
     expr = ' + '.join(columns)
     rows = _q(f"SELECT group_id, ({expr}) AS total FROM users ORDER BY total DESC LIMIT 1")
     return (rows[0]['group_id'], rows[0]['total']) if rows else (None, 0)
@@ -355,7 +364,9 @@ def handle_callback(call):
     try:
         parts = call.data.split(':')
         op = parts[1] if len(parts) > 1 else 'home'
-        if op == 'nop':
+        if op.startswith('cat'):
+            asset_admin.handle(call, parts)
+        elif op == 'nop':
             _answer(call)
         elif op == 'home':
             _panel(call)
@@ -434,6 +445,7 @@ def _panel_markup(user_id):
                types.InlineKeyboardButton(_t('btn_features'), callback_data='ap:feat'))
     markup.add(types.InlineKeyboardButton(_t('btn_logs'), callback_data='ap:log:0'),
                types.InlineKeyboardButton(_t('btn_reset'), callback_data='ap:rst:0'))
+    markup.add(types.InlineKeyboardButton(_t('btn_catalog'), callback_data='ap:cat'))
     markup.add(types.InlineKeyboardButton(_t('btn_trade_photo'), callback_data='trd:ph'),
                types.InlineKeyboardButton(_t('btn_war_photo'), callback_data='ap:wp'))
     markup.add(types.InlineKeyboardButton(_t('btn_trade_adm'), callback_data='trd:adm'))
@@ -469,9 +481,9 @@ def _stats(call):
         return
     groups = _groups()
     lords = _q("SELECT COUNT(*) AS n FROM users")
-    resources = _totals(RESOURCE_COLS)
-    units = _totals(UNIT_COLS)
-    buildings = _totals(BUILDING_COLS)
+    resources = _totals(catalog.keys('resource'))
+    units = _totals(catalog.keys('unit'))
+    buildings = _totals(catalog.keys('building'))
     trades = _trade_counts()
     text = _t('stats_title',
               groups=len(groups),
@@ -489,8 +501,9 @@ def _stats(call):
 def _economy(call):
     if not _require_admin(call):
         return
-    totals = _totals(RESOURCE_COLS)
-    gid, total = _top_group(RESOURCE_COLS)
+    columns = catalog.keys('resource')
+    totals = _totals(columns)
+    gid, total = _top_group(columns)
     richest = f"{_esc(_title(gid))} ({_num(total)})" if gid is not None else _t('nobody')
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(_t('btn_per_group'), callback_data='ap:gl:0'))
@@ -501,8 +514,9 @@ def _economy(call):
 def _military(call):
     if not _require_admin(call):
         return
-    totals = _totals(UNIT_COLS)
-    gid, total = _top_group(UNIT_COLS)
+    columns = catalog.keys('unit')
+    totals = _totals(columns)
+    gid, total = _top_group(columns)
     strongest = f"{_esc(_title(gid))} ({_num(total)})" if gid is not None else _t('nobody')
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(_t('btn_per_group'), callback_data='ap:gl:0'))
@@ -536,7 +550,7 @@ def _group_list(call, page):
 def _group_card(call, gid):
     if not _require_admin(call):
         return
-    cols = ', '.join(ALL_COLS)
+    cols = ', '.join(catalog.all_keys())
     rows = _q(f"SELECT user_id, home_sea, home_land, {cols} FROM users WHERE group_id=?", (gid,))
     if not rows:
         _answer(call, _t('err_generic'), alert=True)
@@ -546,9 +560,9 @@ def _group_card(call, gid):
     text = _t('group_card',
               title=_esc(_title(gid)),
               lord=_user_link(row['user_id']),
-              resources=_lines({c: row[c] for c in RESOURCE_COLS}),
-              units=_lines({c: row[c] for c in UNIT_COLS}),
-              buildings=_lines({c: row[c] for c in BUILDING_COLS}),
+              resources=_lines({c: row[c] for c in catalog.keys('resource')}),
+              units=_lines({c: row[c] for c in catalog.keys('unit')}),
+              buildings=_lines({c: row[c] for c in catalog.keys('building')}),
               active=trades['active'], done=trades['done'],
               home_sea=_esc(row['home_sea'] or _t('unset')),
               home_land=_esc(row['home_land'] or _t('unset')))
@@ -733,16 +747,19 @@ def _reset_confirm(call, gid):
 def _reset_apply(call, gid):
     if not _require_admin(call):
         return
-    cols = ', '.join(ALL_COLS)
+    columns = catalog.all_keys()
+    defaults = catalog.defaults()
+    cols = ', '.join(columns)
     rows = _q(f"SELECT {cols} FROM users WHERE group_id=?", (gid,))
     if not rows:
         _answer(call, _t('err_generic'), alert=True)
         return
-    before = {c: rows[0][c] for c in ALL_COLS}
-    assignments = ', '.join(f"{c}=?" for c in ALL_COLS)   # column names are an internal whitelist
+    before = {c: rows[0][c] for c in columns}
+    # Column names come from the catalog, which validates every key as an identifier.
+    assignments = ', '.join(f"{c}=?" for c in columns)
     _exec(f"UPDATE users SET {assignments} WHERE group_id=?",
-          tuple(DEFAULTS[c] for c in ALL_COLS) + (gid,))
-    changed = {c: v for c, v in before.items() if v != DEFAULTS[c]}
+          tuple(defaults[c] for c in columns) + (gid,))
+    changed = {c: v for c, v in before.items() if v != defaults[c]}
     log(call.from_user.id, 'reset_country', _title(gid),
         json.dumps(changed, ensure_ascii=False, separators=(',', ':')))
     _show(call, _t('reset_done', title=_esc(_title(gid))),

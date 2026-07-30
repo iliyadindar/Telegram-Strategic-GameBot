@@ -9,7 +9,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import admin_panel
-from admin_strings import ALL_COLS, BUILDING_COLS, DEFAULTS, FEATURES, RESOURCE_COLS, UNIT_COLS
+import asset_catalog as catalog
+from admin_strings import FEATURES
 from stubs import Call, Chat, Message, StubBot, User, add_group, make_db
 
 OWNER = 100
@@ -17,6 +18,11 @@ HELPER = 200
 PLAYER = 300
 GROUP_A = -1001
 GROUP_B = -1002
+
+
+def _builtin_keys():
+    return (list(catalog.BUILTIN_RESOURCES) + list(catalog.BUILTIN_UNITS)
+            + [key for key, _, _ in catalog.BUILTIN_BUILDINGS])
 
 
 class PanelTestCase(unittest.TestCase):
@@ -247,12 +253,12 @@ class ResetTest(PanelTestCase):
 
     def current(self):
         cur = self.conn.execute(
-            f"SELECT {', '.join(ALL_COLS)} FROM users WHERE group_id=?", (GROUP_A,))
-        return dict(zip(ALL_COLS, cur.fetchone()))
+            f"SELECT {', '.join(catalog.all_keys())} FROM users WHERE group_id=?", (GROUP_A,))
+        return dict(zip(catalog.all_keys(), cur.fetchone()))
 
     def test_reset_restores_every_column_to_its_default(self):
         admin_panel.handle_callback(self.call(f'ap:rsc:{GROUP_A}'))
-        self.assertEqual(self.current(), DEFAULTS)
+        self.assertEqual(self.current(), catalog.defaults())
 
     def test_reset_leaves_other_groups_untouched(self):
         add_group(self.conn, PLAYER + 1, GROUP_B, money=55)
@@ -399,11 +405,16 @@ class StringsIntegrityTest(unittest.TestCase):
         for lang, table in STRINGS.items():
             self.assertEqual(set(table), reference, f'{lang} keys differ')
 
-    def test_every_column_has_a_name_in_every_language(self):
-        from admin_strings import COL_NAMES
-        for lang, names in COL_NAMES.items():
-            missing = [c for c in ALL_COLS if c not in names]
-            self.assertEqual(missing, [], f'{lang} is missing column names')
+    def test_every_builtin_has_a_name_in_every_language(self):
+        for lang, names in catalog.BUILTIN_LABELS.items():
+            missing = [key for key in _builtin_keys() if key not in names]
+            self.assertEqual(missing, [], f'{lang} is missing labels')
+
+    def test_every_catalog_error_has_a_message(self):
+        from admin_strings import CATALOG_ERRORS, STRINGS
+        for lang, table in STRINGS.items():
+            for code in CATALOG_ERRORS:
+                self.assertIn('cat_err_' + code, table, f'{lang} lacks a message for {code}')
 
     def test_every_feature_has_a_label_in_every_language(self):
         from admin_strings import STRINGS
@@ -417,10 +428,22 @@ class StringsIntegrityTest(unittest.TestCase):
             for action in ACTIONS:
                 self.assertIn('act_' + action, table, f'{lang} lacks a label for {action}')
 
-    def test_column_groups_do_not_overlap(self):
-        self.assertEqual(len(ALL_COLS), len(set(ALL_COLS)))
-        self.assertEqual(set(ALL_COLS),
-                         set(RESOURCE_COLS) | set(UNIT_COLS) | set(BUILDING_COLS))
+    def test_builtin_keys_are_unique_across_the_kinds(self):
+        keys = _builtin_keys()
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_every_builtin_building_produces_a_known_type(self):
+        stock = set(catalog.BUILTIN_RESOURCES) | set(catalog.BUILTIN_UNITS)
+        for building, produces, output in catalog.BUILTIN_BUILDINGS:
+            self.assertIn(produces, stock, f'{building} produces something unknown')
+            self.assertGreater(output, 0, building)
+
+    def test_every_builtin_cost_names_a_real_resource(self):
+        for building, costs in catalog.BUILTIN_COSTS.items():
+            self.assertIn(building, [b for b, _, _ in catalog.BUILTIN_BUILDINGS])
+            for resource in costs:
+                self.assertIn(resource, catalog.BUILTIN_RESOURCES,
+                              f'{building} costs an unknown resource')
 
 
 if __name__ == '__main__':
