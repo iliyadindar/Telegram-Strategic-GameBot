@@ -190,8 +190,10 @@ is not invisible.
 
 `asset_catalog.factory_reset()`:
 
-1. Every non-builtin key goes through `remove()` — same cascade, same column drops, same in-flight
-   guard. If any key is guarded, the whole reset aborts before changing anything and reports which.
+1. Every non-builtin key is checked against the in-flight guard **first**, as a single pass over the
+   whole set. If any key is carried by a live trade the reset aborts before touching anything and
+   names the offending keys. Only once the set is clear does each key go through `remove()` — same
+   cascade, same column drops.
 2. Builtin rows are rewritten from `BUILTIN_*`: `position`, `default_value`, `produces`, `output`,
    `tradeable`, and `hidden=0`.
 3. Builtin labels are rewritten for all three languages.
