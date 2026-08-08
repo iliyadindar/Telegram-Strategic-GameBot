@@ -133,6 +133,14 @@ class EntrypointTest(unittest.TestCase):
             self.assertEqual(value, ops['main.py'], f'{filename} differs')
         self.assertIn('ph', ops['main.py'], 'the photo screen must stay admin-reachable')
 
+    def test_the_map_editor_survives_the_trade_feature_being_off(self):
+        # Its callbacks live under 'trd:', so without this the whole editor
+        # would go dark the moment an admin switched trading off.
+        import trade_map_admin
+        ops = set(self.load('main.py')[0].TRADE_ADMIN_OPS)
+        self.assertTrue(trade_map_admin.OPS <= ops,
+                        f'unreachable map ops: {sorted(trade_map_admin.OPS - ops)}')
+
 
 class PanelEntryTest(unittest.TestCase):
     """/start opens the menu everywhere, and the bare word "panel" is its alias."""

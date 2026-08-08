@@ -230,6 +230,36 @@ unchanged when it does.
 **`test_admin_panel.py`** — log wipe and factory reset both refuse a non-owner; the confirm flows
 require the second step; `notify_admins` fires on wipe.
 
+## As built
+
+Five places where the implementation departed from the design above, recorded so the
+document matches the code:
+
+1. **No `on_change` callback.** The design had `trade_map` notifying `trade_system` so it could
+   drop `_adj_cache` and `_edge_w_cache`. Those caches turned out to be unnecessary once the map
+   moved: `trade_map` memoises behind its own readers and clears on every mutation, so
+   `trade_system` keeps no map state to invalidate. The notification mechanism was dropped rather
+   than left unused.
+
+2. **The toll is zeroed, not deleted.** Node removal was specified as deleting the `toll_<id>` key.
+   That silently restored the shipped toll, because `cfg()` falls back to `CONFIG_DEFAULTS` and
+   `_seed_config()` re-inserts on the next restart. The cascade writes an explicit `0` instead. A
+   test caught this.
+
+3. **The map editor carries its own strings.** Rather than adding ~60 keys per language to
+   `trade_system.STRINGS`, `trade_map_admin` owns a `STRINGS` table for its own screens.
+   `trade_system` gained only `btn_map` and `owner_only`.
+
+4. **Dispatch is by an explicit op set.** `trade_map_admin.OPS` is a frozenset that `trade_system`
+   tests membership against. A `trd:m…` prefix rule would have swallowed `trd:m` and `trd:menu`,
+   which belong to the trade wizard.
+
+5. **`trade_system.init` gained `is_owner`.** Owner-level deletion needs a real owner check;
+   `main*.py` passes `admin_panel.is_owner`, and it falls back to the configured owner id.
+
+Node ids are validated as 2–16 characters rather than the unbounded identifier the design implied,
+since they compose into `toll_<id>` config keys.
+
 ## Build order
 
 1. **Reorder** — smallest, self-contained, and the thing AHMAD hit most recently.
