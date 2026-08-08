@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """World trade system (sea + land) shared by main.py / main-en.py / main-tr.py.
 
-All trade logic lives here once: the world-map graphs, route finding, fees and
-tolls, the trade wizard (inline buttons), the offer lifecycle and the
-background ticker that moves convoys in real time and live-edits the tracking
-message. Player-facing strings are provided in fa/en/tr; each main*.py calls
+All trade logic lives here once: route finding, fees and tolls, the trade
+wizard (inline buttons), the offer lifecycle and the background ticker that
+moves convoys in real time and live-edits the tracking message. Player-facing
+strings are provided in fa/en/tr; each main*.py calls
 init(bot, conn, ADMIN_ID, CHANNEL_ID, lang=...) once and forwards callback
 queries whose data starts with 'trd:' to handle_callback().
+
+The world map itself is data, owned by trade_map. This module asks it for
+nodes, names and adjacency and never keeps its own copy beyond the caches that
+trade_map invalidates on every edit.
 """
 
 import heapq
@@ -20,6 +24,7 @@ import traceback
 from telebot import types
 
 import asset_catalog
+import trade_map
 
 # ---------------------------------------------------------------------------
 # Module state
@@ -34,141 +39,10 @@ _audit = None        # set by init(); optional (actor_id, action, target, detail
 # RLock: refund/credit helpers are called from code that already holds the lock.
 _lock = threading.RLock()
 _ctx = {}            # per-user wizard state (in-memory; nothing escrowed before confirm)
-_adj_cache = {}
-_edge_w_cache = {}
 _title_cache = {}
 _ticker_started = False
 
 TRADE_PREFIX = 'trd:'
-
-# ---------------------------------------------------------------------------
-# World map graphs. Straits/canals/passes are NODES so the ticker can narrate
-# them ("passed the Suez Canal") and toll-free routing can simply block them.
-# A node is tolled iff trade_config has a 'toll_<id>' key with value > 0.
-# ---------------------------------------------------------------------------
-
-
-def _N(kind, home, fa, en, tr):
-    return {'kind': kind, 'home': home, 'names': {'fa': fa, 'en': en, 'tr': tr}}
-
-
-SEA_NODES = {
-    # oceans
-    'nat': _N('ocean', True, 'اقیانوس اطلس شمالی', 'North Atlantic Ocean', 'Kuzey Atlantik Okyanusu'),
-    'sat': _N('ocean', True, 'اقیانوس اطلس جنوبی', 'South Atlantic Ocean', 'Güney Atlantik Okyanusu'),
-    'ind': _N('ocean', True, 'اقیانوس هند', 'Indian Ocean', 'Hint Okyanusu'),
-    'npa': _N('ocean', True, 'اقیانوس آرام شمالی', 'North Pacific Ocean', 'Kuzey Pasifik Okyanusu'),
-    'spa': _N('ocean', True, 'اقیانوس آرام جنوبی', 'South Pacific Ocean', 'Güney Pasifik Okyanusu'),
-    'arc': _N('ocean', True, 'اقیانوس منجمد شمالی', 'Arctic Ocean', 'Arktik Okyanusu'),
-    # seas & gulfs
-    'nor': _N('sea', True, 'دریای شمال', 'North Sea', 'Kuzey Denizi'),
-    'bal': _N('sea', True, 'دریای بالتیک', 'Baltic Sea', 'Baltık Denizi'),
-    'med': _N('sea', True, 'دریای مدیترانه', 'Mediterranean Sea', 'Akdeniz'),
-    'bla': _N('sea', True, 'دریای سیاه', 'Black Sea', 'Karadeniz'),
-    'mar': _N('sea', True, 'دریای مرمره', 'Sea of Marmara', 'Marmara Denizi'),
-    'red': _N('sea', True, 'دریای سرخ', 'Red Sea', 'Kızıldeniz'),
-    'per': _N('sea', True, 'خلیج فارس', 'Persian Gulf', 'Basra Körfezi'),
-    'oma': _N('sea', True, 'دریای عمان و عرب', 'Arabian Sea', 'Umman ve Arap Denizi'),
-    'ade': _N('sea', True, 'دریای عدن', 'Gulf of Aden', 'Aden Körfezi'),
-    'car': _N('sea', True, 'خلیج کارائیب', 'Caribbean Sea', 'Karayip Denizi'),
-    'gmx': _N('sea', True, 'خلیج مکزیک', 'Gulf of Mexico', 'Meksika Körfezi'),
-    'scs': _N('sea', True, 'دریای چین جنوبی', 'South China Sea', 'Güney Çin Denizi'),
-    'ecs': _N('sea', True, 'دریای چین شرقی', 'East China Sea', 'Doğu Çin Denizi'),
-    'yel': _N('sea', True, 'دریای زرد', 'Yellow Sea', 'Sarı Deniz'),
-    'jap': _N('sea', True, 'دریای ژاپن', 'Sea of Japan', 'Japon Denizi'),
-    'phi': _N('sea', True, 'دریای فیلیپین', 'Philippine Sea', 'Filipin Denizi'),
-    'gui': _N('sea', True, 'خلیج گینه', 'Gulf of Guinea', 'Gine Körfezi'),
-    # straits (tolled chokepoints)
-    'gib': _N('strait', False, 'تنگه جبل‌الطارق', 'Strait of Gibraltar', 'Cebelitarık Boğazı'),
-    'bos': _N('strait', False, 'تنگه بسفر', 'Bosphorus Strait', 'İstanbul Boğazı'),
-    'dar': _N('strait', False, 'تنگه داردانل', 'Dardanelles Strait', 'Çanakkale Boğazı'),
-    'dan': _N('strait', False, 'تنگه دانمارک', 'Danish Straits', 'Danimarka Boğazları'),
-    'hor': _N('strait', False, 'تنگه هرمز', 'Strait of Hormuz', 'Hürmüz Boğazı'),
-    'bab': _N('strait', False, 'تنگه باب‌المندب', 'Bab-el-Mandeb Strait', 'Bab-ül Mendeb Boğazı'),
-    'mal': _N('strait', False, 'تنگه مالاکا', 'Strait of Malacca', 'Malakka Boğazı'),
-    'tsu': _N('strait', False, 'تنگه تسوشیما', 'Tsushima Strait', 'Tsushima Boğazı'),
-    'ber': _N('strait', False, 'تنگه برینگ', 'Bering Strait', 'Bering Boğazı'),
-    'sun': _N('strait', False, 'تنگه سوندا', 'Sunda Strait', 'Sunda Boğazı'),
-    'lom': _N('strait', False, 'تنگه لومبوک', 'Lombok Strait', 'Lombok Boğazı'),
-    'mag': _N('strait', False, 'تنگه ماژلان', 'Strait of Magellan', 'Macellan Boğazı'),
-    'moz': _N('strait', False, 'کانال موزامبیک', 'Mozambique Channel', 'Mozambik Kanalı'),
-    # canals (tolled)
-    'sue': _N('canal', False, 'کانال سوئز', 'Suez Canal', 'Süveyş Kanalı'),
-    'pan': _N('canal', False, 'کانال پاناما', 'Panama Canal', 'Panama Kanalı'),
-    'kie': _N('canal', False, 'کانال کیل', 'Kiel Canal', 'Kiel Kanalı'),
-    # free capes (long detours)
-    'cgh': _N('cape', False, 'دماغه امید نیک', 'Cape of Good Hope', 'Ümit Burnu'),
-    'chn': _N('cape', False, 'دماغه هورن', 'Cape Horn', 'Horn Burnu'),
-}
-
-# undirected edges: (a, b, weight in distance units)
-SEA_EDGES = [
-    # Europe / Atlantic
-    ('nat', 'nor', 2), ('nor', 'dan', 2), ('dan', 'bal', 1),
-    ('nor', 'kie', 1), ('kie', 'bal', 1),
-    ('nat', 'gib', 2), ('gib', 'med', 1),
-    # Mediterranean / Black Sea
-    ('med', 'dar', 2), ('dar', 'mar', 1), ('mar', 'bos', 1), ('bos', 'bla', 1),
-    # Suez corridor
-    ('med', 'sue', 2), ('sue', 'red', 1), ('red', 'bab', 2), ('bab', 'ade', 1),
-    ('ade', 'oma', 2), ('oma', 'hor', 1), ('hor', 'per', 1), ('oma', 'ind', 2),
-    # Africa / capes
-    ('nat', 'gui', 4), ('gui', 'sat', 2), ('nat', 'sat', 5),
-    ('sat', 'cgh', 5), ('cgh', 'ind', 5),
-    ('cgh', 'moz', 2), ('moz', 'ind', 2),
-    # Americas
-    ('nat', 'car', 4), ('car', 'gmx', 1), ('car', 'pan', 1), ('pan', 'spa', 2),
-    ('sat', 'mag', 5), ('mag', 'spa', 3), ('sat', 'chn', 6), ('chn', 'spa', 4),
-    # Indian Ocean -> East Asia
-    ('ind', 'mal', 3), ('mal', 'scs', 1), ('ind', 'sun', 4), ('sun', 'scs', 2),
-    ('ind', 'lom', 4), ('lom', 'phi', 3),
-    # East Asia
-    ('scs', 'ecs', 2), ('ecs', 'yel', 1), ('ecs', 'tsu', 1), ('tsu', 'jap', 1),
-    ('jap', 'npa', 2), ('scs', 'phi', 2), ('ecs', 'phi', 2), ('phi', 'npa', 2),
-    ('phi', 'spa', 3),
-    # Pacific / Arctic
-    ('npa', 'spa', 5), ('npa', 'ber', 4), ('ber', 'arc', 1),
-    ('arc', 'nat', 5), ('arc', 'nor', 4),
-]
-
-LAND_NODES = {
-    # regions
-    'ibe': _N('region', True, 'ایبریا', 'Iberia', 'İberya'),
-    'weu': _N('region', True, 'اروپای غربی', 'Western Europe', 'Batı Avrupa'),
-    'eeu': _N('region', True, 'اروپای شرقی', 'Eastern Europe', 'Doğu Avrupa'),
-    'ana': _N('region', True, 'آناتولی', 'Anatolia', 'Anadolu'),
-    'lev': _N('region', True, 'شام', 'Levant', 'Levant'),
-    'egy': _N('region', True, 'مصر', 'Egypt', 'Mısır'),
-    'naf': _N('region', True, 'شمال آفریقا', 'North Africa', 'Kuzey Afrika'),
-    'waf': _N('region', True, 'غرب آفریقا', 'West Africa', 'Batı Afrika'),
-    'eaf': _N('region', True, 'شرق آفریقا', 'East Africa', 'Doğu Afrika'),
-    'ara': _N('region', True, 'عربستان', 'Arabia', 'Arabistan'),
-    'prs': _N('region', True, 'پارس', 'Persia', 'Pers'),
-    'cas': _N('region', True, 'آسیای میانه', 'Central Asia', 'Orta Asya'),
-    'hnd': _N('region', True, 'هند', 'India', 'Hindistan'),
-    'chi': _N('region', True, 'چین', 'China', 'Çin'),
-    'sta': _N('region', True, 'آسیای جنوب شرقی', 'Southeast Asia', 'Güneydoğu Asya'),
-    # tolled passes
-    'sin': _N('pass', False, 'گذرگاه سینا', 'Sinai Crossing', 'Sina Geçidi'),
-    'sah': _N('pass', False, 'مسیر صحرا', 'Sahara Route', 'Sahra Yolu'),
-    'cau': _N('pass', False, 'دروازه قفقاز', 'Caucasus Gates', 'Kafkas Kapıları'),
-    'zag': _N('pass', False, 'دروازه زاگرس', 'Zagros Gates', 'Zagros Kapıları'),
-    'pam': _N('pass', False, 'گذرگاه پامیر', 'Pamir Passes', 'Pamir Geçitleri'),
-    'khy': _N('pass', False, 'گذرگاه خیبر', 'Khyber Pass', 'Hayber Geçidi'),
-}
-
-LAND_EDGES = [
-    ('ibe', 'weu', 2), ('weu', 'eeu', 2), ('eeu', 'ana', 2), ('ana', 'lev', 2),
-    ('lev', 'sin', 1), ('sin', 'egy', 1), ('lev', 'ara', 2), ('ara', 'egy', 2),
-    ('egy', 'naf', 2), ('naf', 'ibe', 2), ('naf', 'sah', 2), ('sah', 'waf', 2),
-    ('egy', 'eaf', 3), ('eaf', 'ara', 2),
-    ('eeu', 'cau', 1), ('cau', 'prs', 2), ('lev', 'zag', 1), ('zag', 'prs', 1),
-    ('ana', 'prs', 4),
-    ('prs', 'cas', 2), ('eeu', 'cas', 4),
-    ('cas', 'pam', 1), ('pam', 'chi', 3), ('cas', 'chi', 6),
-    ('prs', 'khy', 1), ('khy', 'hnd', 1), ('prs', 'hnd', 4),
-    ('hnd', 'sta', 3), ('sta', 'chi', 3), ('hnd', 'chi', 5),
-]
 
 # ---------------------------------------------------------------------------
 # Config (all admin-editable, persisted in trade_config)
@@ -559,6 +433,10 @@ def init(bot, conn, admin_id, channel_id, lang='fa', is_admin=None, audit=None):
     _audit = audit       # admin_panel.log, so trade admin actions reach the action log
     _migrate()
     _seed_config()
+    # The world map is data. Seed it, and let it refuse to delete a node a
+    # convoy is still sailing towards.
+    trade_map.init(conn)
+    trade_map.set_node_guard(active_route_nodes)
     if not _ticker_started:
         _ticker_started = True
         t = threading.Thread(target=_ticker_loop, daemon=True)
@@ -753,15 +631,15 @@ def _next_step(message, user_id, fn):
 
 
 def _nodes(mode):
-    return SEA_NODES if mode == 'sea' else LAND_NODES
+    return trade_map.nodes(mode)
 
 
 def _node(mode, nid):
-    return _nodes(mode)[nid]
+    return trade_map.node(mode, nid)
 
 
 def _node_name(mode, nid):
-    return _node(mode, nid)['names'][_lang]
+    return trade_map.name(nid, _lang)
 
 
 def _mode_name(mode):
@@ -773,8 +651,9 @@ def _mode_emoji(mode):
 
 
 def _toll(nid):
-    key = 'toll_' + nid
-    return cfg(key) if key in CONFIG_DEFAULTS else 0
+    # cfg() falls back to CONFIG_DEFAULTS and then to 0, so a chokepoint an
+    # admin drew on the map is simply free until someone prices it.
+    return cfg('toll_' + nid)
 
 
 def _owner_of(nid):
@@ -803,24 +682,11 @@ def _toll_for(nid, sender_gid=None):
 
 
 def _mode_of_node(nid):
-    return 'sea' if nid in SEA_NODES else 'land'
+    return trade_map.mode_of(nid) or 'sea'
 
 
 def _adj(mode):
-    if mode not in _adj_cache:
-        adj = {n: [] for n in _nodes(mode)}
-        for a, b, w in (SEA_EDGES if mode == 'sea' else LAND_EDGES):
-            adj[a].append((b, w))
-            adj[b].append((a, w))
-        _adj_cache[mode] = adj
-    return _adj_cache[mode]
-
-
-def _edge_w(mode):
-    if mode not in _edge_w_cache:
-        _edge_w_cache[mode] = {frozenset((a, b)): w
-                               for a, b, w in (SEA_EDGES if mode == 'sea' else LAND_EDGES)}
-    return _edge_w_cache[mode]
+    return trade_map.adjacency(mode)
 
 
 def _dijkstra(adj, src, dst, blocked=frozenset(), cost_fn=None):
@@ -855,11 +721,15 @@ def _route_info(mode, path, label, local=False, sender_gid=None):
     mpu = cfg('sea_min_per_unit' if mode == 'sea' else 'land_min_per_unit')
     if local:
         leg_units = [1]
+        leg_minutes = [mpu]
     else:
-        w = _edge_w(mode)
-        leg_units = [w[frozenset((path[i], path[i + 1]))] for i in range(len(path) - 1)]
+        legs = [trade_map.leg(mode, path[i], path[i + 1]) or (0, 0)
+                for i in range(len(path) - 1)]
+        leg_units = [units for units, _minutes in legs]
+        # An edge may carry an exact travel time; without one it is derived
+        # from its length, exactly as it always was.
+        leg_minutes = [minutes if minutes > 0 else units * mpu for units, minutes in legs]
     units = sum(leg_units)
-    leg_minutes = [u * mpu for u in leg_units]
     tolls = [(nid, _toll_for(nid, sender_gid)) for nid in path]
     tolls = [(nid, amt) for nid, amt in tolls if amt > 0]
     base_fee = units * cfg('fee_per_unit')
@@ -1833,9 +1703,7 @@ def _home_set(call, mcode, gid, nid):
 
 def _chokepoints():
     """All tolled chokepoint node ids, sea first then land."""
-    out = [nid for nid, n in SEA_NODES.items() if n['kind'] in ('strait', 'canal')]
-    out += [nid for nid, n in LAND_NODES.items() if n['kind'] == 'pass']
-    return out
+    return trade_map.chokepoints()
 
 
 OWN_PAGE_SIZE = 8

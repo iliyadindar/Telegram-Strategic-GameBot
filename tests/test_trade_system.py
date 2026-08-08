@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asset_catalog as catalog
+import trade_map
 import trade_system
 from stubs import BUILTIN_COLUMNS, Chat, Message, StubBot, User, make_db
 
@@ -63,7 +64,7 @@ class PathRenderingTest(unittest.TestCase):
 
     def path(self, lang):
         trade_system._lang = lang
-        sea = list(trade_system.SEA_NODES)[:3]
+        sea = list(trade_map.nodes('sea'))[:3]
         return trade_system._path_names('sea', sea)
 
     def test_persian_path_uses_the_left_arrow(self):
@@ -78,7 +79,6 @@ class PathRenderingTest(unittest.TestCase):
 
     def test_path_lists_every_stop(self):
         trade_system._lang = 'en'
-        sea = list(trade_system.SEA_NODES)[:3]
         self.assertEqual(len(self.path('en').split(RIGHT_ARROW)), 3)
 
 
@@ -250,6 +250,47 @@ class SchemaAgreementTest(unittest.TestCase):
         for key, default in BUILTIN_COLUMNS:
             self.assertIn(key, declared, f'{key} is not a column of users')
             self.assertEqual(declared[key], default, f'{key} default drifted from the schema')
+
+
+class EdgeTimingTest(unittest.TestCase):
+    """A leg's length prices it; its minutes override only retimes it."""
+
+    LEGS = (('med', 'sue'), ('sue', 'red'))
+
+    def setUp(self):
+        self.conn = make_db()
+        self.addCleanup(self.conn.close)
+        trade_system.init(StubBot(), self.conn, 1, '@news', lang='en')
+
+    def route(self):
+        return trade_system._route_info('sea', ['med', 'sue', 'red'], 'route_fast')
+
+    def rate(self):
+        return trade_system.cfg('sea_min_per_unit')
+
+    def test_timing_derives_from_length_by_default(self):
+        expected = sum(trade_map.leg('sea', a, b)[0] for a, b in self.LEGS) * self.rate()
+        self.assertEqual(self.route()['minutes'], expected)
+
+    def test_an_override_times_that_leg_exactly(self):
+        trade_map.set_edge('sea', 'med', 'sue', minutes=5)
+        expected = 5 + trade_map.leg('sea', 'sue', 'red')[0] * self.rate()
+        self.assertEqual(self.route()['minutes'], expected)
+        self.assertEqual(self.route()['leg_minutes'][0], 5)
+
+    def test_an_override_leaves_the_fee_alone(self):
+        before = self.route()['base_fee']
+        trade_map.set_edge('sea', 'med', 'sue', minutes=999)
+        self.assertEqual(self.route()['base_fee'], before)
+
+    def test_length_still_drives_the_fee(self):
+        before = self.route()['base_fee']
+        trade_map.set_edge('sea', 'med', 'sue', units=10)
+        self.assertGreater(self.route()['base_fee'], before)
+
+    def test_a_renamed_node_shows_its_new_name_on_the_path(self):
+        trade_map.set_labels('sue', {'en': 'The Ditch'})
+        self.assertIn('The Ditch', trade_system._path_names('sea', ['med', 'sue']))
 
 
 if __name__ == '__main__':
