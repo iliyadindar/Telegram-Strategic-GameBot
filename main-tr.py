@@ -4,6 +4,7 @@ import sqlite3
 import html
 
 import admin_panel
+import asset_catalog
 import asset_ui
 import bot_config
 import trade_system
@@ -75,6 +76,11 @@ admin_panel.init(bot, conn, ADMIN_ID, CHANNEL_ID, WAR_CHANNEL_ID, lang='tr',
 # World trade system (sea + land routes, tolls, live convoy tracking)
 trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='tr',
                   is_admin=admin_panel.is_admin, audit=admin_panel.log)
+
+# Destroying an asset type drops its `users` column. A trade still carrying
+# that good would then fail to refund or deliver, so the catalog asks the trade
+# system what is in flight before it drops anything.
+asset_catalog.set_delete_guard(trade_system.active_goods_keys)
 
 # Player-facing asset, upgrade and weekly-production screens. Every entry
 # comes from the asset catalog, so admin-added types work with no code change.

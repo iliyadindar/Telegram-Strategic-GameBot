@@ -18,6 +18,7 @@ from admin_strings import STRINGS
 _bot = None
 _lang = 'fa'
 _require_admin = None
+_require_owner = None
 _answer = None
 _show = None
 _log = None
@@ -30,11 +31,16 @@ PAGE_SIZE = 8
 _wizards = {}
 
 
-def init(bot, lang, require_admin, answer, show, log, next_step, back_button):
-    global _bot, _lang, _require_admin, _answer, _show, _log, _next_step, _back_button
+def init(bot, lang, require_admin, answer, show, log, next_step, back_button,
+         require_owner=None):
+    global _bot, _lang, _require_admin, _require_owner, _answer, _show, _log
+    global _next_step, _back_button
     _bot = bot
     _lang = lang
     _require_admin = require_admin
+    # Destroying a type is owner-only. Without a checker, fall back to the
+    # admin one rather than silently letting anyone through.
+    _require_owner = require_owner if require_owner is not None else require_admin
     _answer = answer
     _show = show
     _log = log
@@ -106,6 +112,12 @@ def handle(call, parts):
         _hide(call, parts[2])
     elif op == 'catshow':
         _unhide(call, parts[2])
+    elif op == 'catmv':
+        _move(call, parts[2], parts[3])
+    elif op == 'catdel':
+        _delete_confirm(call, parts[2])
+    elif op == 'catdelc':
+        _delete_apply(call, parts[2])
     else:
         _answer(call, STRINGS[_lang]['err_generic'])
 
@@ -180,6 +192,9 @@ def _entry_screen(call, key):
     else:
         extra = ''
 
+    place, total = catalog.rank(key)
+    extra = (extra + '\n' if extra else '') + _t('cat_rank', place=place, total=total)
+
     note = _t('cat_builtin_note') if row['builtin'] else ''
     if row['hidden']:
         note += _t('cat_hidden_note')
@@ -194,6 +209,15 @@ def _entry_screen(call, key):
     if row['kind'] == 'resource':
         buttons.append(types.InlineKeyboardButton(_t('btn_cat_tradeable'),
                                                   callback_data=f'ap:cattr:{key}'))
+
+    order = []
+    if place > 1:
+        order.append(types.InlineKeyboardButton(_t('btn_cat_up'),
+                                                callback_data=f'ap:catmv:{key}:up'))
+    if place < total:
+        order.append(types.InlineKeyboardButton(_t('btn_cat_down'),
+                                                callback_data=f'ap:catmv:{key}:down'))
+
     if not row['builtin']:
         if row['hidden']:
             buttons.append(types.InlineKeyboardButton(_t('btn_cat_unhide'),
@@ -201,12 +225,78 @@ def _entry_screen(call, key):
         else:
             buttons.append(types.InlineKeyboardButton(_t('btn_cat_hide'),
                                                       callback_data=f'ap:cathide:{key}'))
+        buttons.append(types.InlineKeyboardButton(_t('btn_cat_delete'),
+                                                  callback_data=f'ap:catdel:{key}'))
 
     _show(call, _t('cat_entry', label=_esc(_label(key)), key=_esc(key),
                    kind=_t('kind_' + row['kind']), default=row['default_value'],
                    extra=extra, note=note),
-          _markup(buttons, back=f"ap:catk:{row['kind']}:0"))
+          _markup(order, buttons, back=f"ap:catk:{row['kind']}:0"))
     _answer(call)
+
+
+# ---------------------------------------------------------------------------
+# Ordering
+# ---------------------------------------------------------------------------
+
+
+def _move(call, key, direction):
+    if not _require_admin(call):
+        return
+    try:
+        moved = catalog.move(key, direction)
+    except catalog.CatalogError as exc:
+        _answer(call, _err(exc), alert=True)
+        return
+    if not moved:
+        _answer(call, _t('cat_at_top' if direction == 'up' else 'cat_at_bottom'))
+        return
+    place, _total = catalog.rank(key)
+    _log(call.from_user.id, 'asset_type_edit', key, f'moved {direction} to #{place}')
+    _answer(call, _t('cat_moved'))
+    _entry_screen(call, key)
+
+
+# ---------------------------------------------------------------------------
+# Destroying a type
+# ---------------------------------------------------------------------------
+
+
+def _delete_confirm(call, key):
+    if not _require_owner(call):
+        return
+    row = catalog.entry(key)
+    if row is None:
+        _answer(call, _t('cat_err_unknown'), alert=True)
+        return
+    if row['builtin']:
+        _answer(call, _t('cat_err_builtin'), alert=True)
+        return
+    count = catalog.holders(key)
+    holders = (_t('cat_delete_holders', n=count) if count
+               else _t('cat_delete_holders_none'))
+    confirm = types.InlineKeyboardButton(_t('btn_cat_delete_yes'),
+                                         callback_data=f'ap:catdelc:{key}')
+    _show(call, _t('cat_delete_confirm', label=_esc(_label(key)), key=_esc(key),
+                   holders=holders),
+          _markup([confirm], back=f'ap:cate:{key}'))
+    _answer(call)
+
+
+def _delete_apply(call, key):
+    if not _require_owner(call):
+        return
+    label = _label(key)
+    kind = (catalog.entry(key) or {}).get('kind', 'resource')
+    try:
+        dropped = catalog.remove(key)
+    except catalog.CatalogError as exc:
+        _answer(call, _err(exc), alert=True)
+        return
+    _log(call.from_user.id, 'asset_remove', key, 'destroyed' if dropped else 'column kept')
+    _bot.send_message(call.message.chat.id,
+                      _t('cat_deleted' if dropped else 'cat_deleted_kept_column', label=label))
+    _kind_list(call, kind, 0)
 
 
 # ---------------------------------------------------------------------------

@@ -256,5 +256,233 @@ class HideTest(CatalogTestCase):
         self.assertNotIn('spice', catalog.tradeable_resources())
 
 
+class OrderTest(CatalogTestCase):
+
+    def resources(self):
+        return list(catalog.keys('resource'))
+
+    def test_a_new_resource_lands_at_the_bottom(self):
+        catalog.add('peoples', 'resource', {'en': 'Peoples'})
+        self.assertEqual(self.resources()[-1], 'peoples')
+
+    def test_moving_up_swaps_with_the_neighbour(self):
+        before = self.resources()
+        self.assertTrue(catalog.move(before[3], 'up'))
+        after = self.resources()
+        self.assertEqual(after[2], before[3])
+        self.assertEqual(after[3], before[2])
+
+    def test_moving_down_swaps_the_other_way(self):
+        before = self.resources()
+        self.assertTrue(catalog.move(before[0], 'down'))
+        self.assertEqual(self.resources()[1], before[0])
+
+    def test_a_new_type_can_be_walked_to_the_top(self):
+        # AHMAD's case: 'peoples' is added under clothes and belongs above money.
+        catalog.add('peoples', 'resource', {'en': 'Peoples'})
+        while catalog.move('peoples', 'up'):
+            pass
+        self.assertEqual(self.resources()[0], 'peoples')
+
+    def test_moving_past_the_top_reports_no_move(self):
+        self.assertFalse(catalog.move(self.resources()[0], 'up'))
+
+    def test_moving_past_the_bottom_reports_no_move(self):
+        self.assertFalse(catalog.move(self.resources()[-1], 'down'))
+
+    def test_order_survives_a_collision_in_positions(self):
+        self.conn.execute("UPDATE asset_catalog SET position=10 WHERE kind='resource'")
+        self.conn.commit()
+        before = self.resources()
+        self.assertTrue(catalog.move(before[2], 'up'))
+        after = self.resources()
+        self.assertEqual(after[1], before[2])
+        self.assertEqual(len(after), len(before))
+
+    def test_moving_does_not_cross_into_another_kind(self):
+        first_unit = catalog.keys('unit')[0]
+        self.assertFalse(catalog.move(first_unit, 'up'))
+        self.assertEqual(catalog.keys('unit')[0], first_unit)
+
+    def test_hidden_types_still_hold_their_place(self):
+        catalog.add('peoples', 'resource', {'en': 'Peoples'})
+        catalog.add('spice', 'resource', {'en': 'Spice'})
+        catalog.hide('peoples')
+        self.assertTrue(catalog.move('spice', 'up'))
+        self.assertEqual(catalog.keys('resource', include_hidden=True)[-1], 'peoples')
+
+    def test_rank_reports_place_within_the_kind(self):
+        place, total = catalog.rank(self.resources()[0])
+        self.assertEqual(place, 1)
+        self.assertEqual(total, len(catalog.BUILTIN_RESOURCES))
+
+    def test_a_bad_direction_is_refused(self):
+        with self.assertRaises(catalog.CatalogError):
+            catalog.move('money', 'sideways')
+
+
+class RemoveTest(CatalogTestCase):
+
+    def setUp(self):
+        super().setUp()
+        catalog.add('archers', 'unit', {'en': 'Archers'}, default_value=750)
+        self.conn.execute("INSERT INTO users (user_id, group_id) VALUES (1, -1)")
+        self.conn.execute("UPDATE users SET archers=42 WHERE group_id=-1")
+        self.conn.commit()
+        self.addCleanup(catalog.set_delete_guard, None)
+
+    def test_removing_drops_the_column(self):
+        self.assertTrue(catalog.remove('archers'))
+        self.assertNotIn('archers', self.columns())
+
+    def test_removing_takes_the_type_out_of_the_catalog(self):
+        catalog.remove('archers')
+        self.assertNotIn('archers', catalog.all_keys(include_hidden=True))
+        self.assertIsNone(catalog.entry('archers'))
+
+    def test_removing_takes_its_labels_with_it(self):
+        catalog.remove('archers')
+        self.assertEqual(catalog.labels('archers'), {})
+
+    def test_a_building_that_produced_it_now_produces_nothing(self):
+        catalog.add('archery_range', 'building', {'en': 'Range'},
+                    produces='archers', output=400)
+        catalog.remove('archers')
+        self.assertEqual(catalog.entry('archery_range')['produces'], '')
+        self.assertEqual(catalog.entry('archery_range')['output'], 0)
+
+    def test_removing_a_resource_clears_costs_that_named_it(self):
+        catalog.add('spice', 'resource', {'en': 'Spice'})
+        catalog.set_upgrade_cost('bank', 'spice', 40)
+        catalog.remove('spice')
+        self.assertNotIn('spice', catalog.upgrade_cost('bank'))
+
+    def test_removing_a_building_clears_its_own_costs(self):
+        catalog.add('range', 'building', {'en': 'Range'})
+        catalog.set_upgrade_cost('range', 'money', 40)
+        catalog.remove('range')
+        self.assertEqual(catalog.upgrade_cost('range'), {})
+
+    def test_the_key_becomes_free_again(self):
+        catalog.remove('archers')
+        catalog.add('archers', 'unit', {'en': 'Archers'}, default_value=5)
+        self.assertIn('archers', self.columns())
+        row = self.conn.execute("SELECT archers FROM users WHERE group_id=-1").fetchone()
+        self.assertEqual(row[0], 5)  # the old 42 is gone for good
+
+    def test_builtins_cannot_be_removed(self):
+        with self.assertRaises(catalog.CatalogError):
+            catalog.remove('money')
+        self.assertIn('money', self.columns())
+
+    def test_a_hidden_type_can_still_be_removed(self):
+        catalog.hide('archers')
+        self.assertTrue(catalog.remove('archers'))
+        self.assertNotIn('archers', self.columns())
+
+    def test_a_key_in_flight_is_refused(self):
+        catalog.set_delete_guard(lambda: {'archers'})
+        with self.assertRaises(catalog.CatalogError):
+            catalog.remove('archers')
+        self.assertIn('archers', self.columns())
+
+    def test_a_key_not_in_flight_is_allowed(self):
+        catalog.set_delete_guard(lambda: {'spice'})
+        self.assertTrue(catalog.remove('archers'))
+
+    def test_a_guard_that_cannot_answer_blocks_the_delete(self):
+        def broken():
+            raise RuntimeError('trade system is down')
+        catalog.set_delete_guard(broken)
+        with self.assertRaises(catalog.CatalogError):
+            catalog.remove('archers')
+        self.assertIn('archers', self.columns())
+
+    def test_removing_an_unknown_key_is_refused(self):
+        with self.assertRaises(catalog.CatalogError):
+            catalog.remove('phantoms')
+
+
+class FactoryResetTest(CatalogTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.conn.execute("INSERT INTO users (user_id, group_id) VALUES (1, -1)")
+        self.conn.commit()
+        self.addCleanup(catalog.set_delete_guard, None)
+
+    def test_custom_types_are_destroyed(self):
+        catalog.add('archers', 'unit', {'en': 'Archers'})
+        catalog.add('spice', 'resource', {'en': 'Spice'})
+        removed, kept = catalog.factory_reset()
+        self.assertEqual(sorted(removed), ['archers', 'spice'])
+        self.assertEqual(kept, [])
+        self.assertNotIn('archers', self.columns())
+        self.assertNotIn('spice', self.columns())
+
+    def test_builtin_labels_are_restored(self):
+        catalog.set_labels('money', {'en': '💰 Coin'})
+        catalog.factory_reset()
+        self.assertEqual(catalog.label('money', 'en'), catalog.BUILTIN_LABELS['en']['money'])
+
+    def test_builtin_defaults_are_restored(self):
+        catalog.set_default('money', 999999)
+        catalog.factory_reset()
+        self.assertEqual(catalog.defaults()['money'], catalog.RESOURCE_DEFAULT)
+
+    def test_builtin_production_is_restored(self):
+        catalog.set_output('bank', '', 0)
+        catalog.factory_reset()
+        self.assertIn(('bank', 'money', 1500), catalog.production())
+
+    def test_builtin_costs_are_restored(self):
+        catalog.set_upgrade_cost('bank', 'gold', 4321)
+        catalog.factory_reset()
+        self.assertEqual(catalog.upgrade_cost('bank'), catalog.BUILTIN_COSTS['bank'])
+
+    def test_a_cost_line_added_to_a_builtin_is_dropped(self):
+        catalog.set_upgrade_cost('bank', 'food', 77)
+        catalog.factory_reset()
+        self.assertNotIn('food', catalog.upgrade_cost('bank'))
+
+    def test_builtin_order_is_restored(self):
+        catalog.move('money', 'down')
+        catalog.factory_reset()
+        self.assertEqual(catalog.keys('resource')[0], 'money')
+
+    def test_a_hidden_builtin_comes_back(self):
+        self.conn.execute("UPDATE asset_catalog SET hidden=1 WHERE key='money'")
+        self.conn.commit()
+        catalog.factory_reset()
+        self.assertIn('money', catalog.all_keys())
+
+    def test_tradeable_flags_are_restored(self):
+        catalog.set_tradeable('money', 0)
+        catalog.factory_reset()
+        self.assertIn('money', catalog.tradeable_resources())
+
+    def test_group_balances_are_left_alone(self):
+        self.conn.execute("UPDATE users SET money=7 WHERE group_id=-1")
+        self.conn.commit()
+        catalog.factory_reset()
+        row = self.conn.execute("SELECT money FROM users WHERE group_id=-1").fetchone()
+        self.assertEqual(row[0], 7)
+
+    def test_a_key_in_flight_aborts_the_whole_reset(self):
+        catalog.add('archers', 'unit', {'en': 'Archers'})
+        catalog.add('spice', 'resource', {'en': 'Spice'})
+        catalog.set_delete_guard(lambda: {'spice'})
+        with self.assertRaises(catalog.CatalogError):
+            catalog.factory_reset()
+        # nothing was destroyed, not even the key that was free to go
+        self.assertIn('archers', self.columns())
+        self.assertIn('spice', self.columns())
+
+    def test_reset_with_nothing_custom_is_harmless(self):
+        removed, kept = catalog.factory_reset()
+        self.assertEqual(removed, [])
+        self.assertEqual(set(catalog.keys('resource')), set(catalog.BUILTIN_RESOURCES))
+
+
 if __name__ == '__main__':
     unittest.main()

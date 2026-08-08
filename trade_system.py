@@ -955,6 +955,42 @@ def _refund(trade):
     _give(trade['sender_group_id'], back)
 
 
+# A trade in one of these states still owes somebody a write to the users table:
+# 'offered' can be refunded, 'active' will be delivered. Everything else is done.
+LIVE_STATUSES = ('offered', 'active')
+
+
+def active_goods_keys():
+    """Asset keys a live trade is still carrying.
+
+    _give() and _refund() build `UPDATE users SET <col> = <col> + ?` from these
+    keys. Destroying such a column mid-shipment makes that write raise on a
+    column that no longer exists and the cargo is simply lost, so the catalog
+    asks this before it drops anything.
+    """
+    keys = set()
+    placeholders = ', '.join('?' * len(LIVE_STATUSES))
+    for row in _q(f"SELECT goods, vehicles FROM trades WHERE status IN ({placeholders})",
+                  LIVE_STATUSES):
+        keys.update(json.loads(row['goods']))
+        keys.update(col for col in json.loads(row['vehicles']) if col != 'caravans')
+    keys.add('money')  # every live trade holds an escrowed fee
+    return keys
+
+
+def active_route_nodes():
+    """Map node ids a live trade's stored route still passes through.
+
+    Deleting one of these would strand the shipment: the ticker walks the route
+    leg by leg and narrates each node by name.
+    """
+    nodes = set()
+    placeholders = ', '.join('?' * len(LIVE_STATUSES))
+    for row in _q(f"SELECT route FROM trades WHERE status IN ({placeholders})", LIVE_STATUSES):
+        nodes.update(json.loads(row['route']))
+    return nodes
+
+
 # ---------------------------------------------------------------------------
 # Callback entry point
 # ---------------------------------------------------------------------------

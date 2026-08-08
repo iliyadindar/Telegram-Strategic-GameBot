@@ -65,7 +65,8 @@ def init(bot, conn, owner_id, channel_id, war_channel_id=None, lang='fa', game_m
     # Resources, units and buildings are data: seed the catalog and make sure
     # `users` has a column for every type before anything reads them.
     catalog.init(conn)
-    asset_admin.init(bot, lang, _require_admin, _answer, _show, log, _next_step, _back_row)
+    asset_admin.init(bot, lang, _require_admin, _answer, _show, log, _next_step, _back_row,
+                     require_owner=_require_owner)
 
 
 def _migrate():
@@ -299,6 +300,22 @@ def recent_log(limit=LOG_LIMIT):
     return _q("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?", (int(limit),))
 
 
+def log_size():
+    return _q("SELECT COUNT(*) AS n FROM admin_log")[0]['n']
+
+
+def clear_log():
+    """Empty the action log and return how many rows went.
+
+    Deliberately leaves no entry of its own: the point of the feature is that
+    the screen reads as though nothing ever happened. Callers announce the wipe
+    to the admins instead, so an erasable audit trail is still not a silent one.
+    """
+    count = log_size()
+    _exec("DELETE FROM admin_log")
+    return count
+
+
 def notify_admins(text, **kwargs):
     """Send a message to the owner and every promoted admin, ignoring failures."""
     for uid in admin_ids():
@@ -398,6 +415,14 @@ def handle_callback(call):
             _reset_confirm(call, int(parts[2]))
         elif op == 'rsc':
             _reset_apply(call, int(parts[2]))
+        elif op == 'lgc':
+            _log_clear_confirm(call)
+        elif op == 'lgcc':
+            _log_clear_apply(call)
+        elif op == 'fac':
+            _factory_confirm(call)
+        elif op == 'facc':
+            _factory_apply(call)
         elif op == 'wp':
             _war_photo_menu(call)
         elif op == 'wps':
@@ -451,6 +476,7 @@ def _panel_markup(user_id):
     markup.add(types.InlineKeyboardButton(_t('btn_trade_adm'), callback_data='trd:adm'))
     if is_owner(user_id):
         markup.add(types.InlineKeyboardButton(_t('btn_admins'), callback_data='ap:adm'))
+        markup.add(types.InlineKeyboardButton(_t('btn_factory'), callback_data='ap:fac'))
     if _game_menu is not None:
         markup.add(types.InlineKeyboardButton(_t('btn_game_menu'), callback_data='ap:menu'))
     return markup
@@ -626,7 +652,29 @@ def _log_page(call, page):
     body = '\n\n'.join(_log_row(e) for e in window)
     markup = types.InlineKeyboardMarkup(row_width=2)
     _pager(markup, page, pages, 'ap:log:')
+    if is_owner(call.from_user.id):
+        markup.add(types.InlineKeyboardButton(_t('btn_log_clear'), callback_data='ap:lgc'))
     _show(call, _t('log_title', p=page + 1, n=pages) + '\n\n' + body, _back_row(markup))
+    _answer(call)
+
+
+def _log_clear_confirm(call):
+    if not _require_owner(call):
+        return
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(_t('btn_confirm_log_clear'), callback_data='ap:lgcc'))
+    _back_row(markup, 'ap:log:0')
+    _show(call, _t('log_clear_confirm', n=log_size()), markup)
+    _answer(call)
+
+
+def _log_clear_apply(call):
+    if not _require_owner(call):
+        return
+    count = clear_log()
+    # The log cannot record its own erasure, so tell the admins directly.
+    notify_admins(_t('log_clear_notice', u=_user_name(call.from_user.id), n=count))
+    _show(call, _t('log_clear_done', n=count), _back_row(types.InlineKeyboardMarkup()))
     _answer(call)
 
 
@@ -764,6 +812,42 @@ def _reset_apply(call, gid):
         json.dumps(changed, ensure_ascii=False, separators=(',', ':')))
     _show(call, _t('reset_done', title=_esc(_title(gid))),
           _back_row(types.InlineKeyboardMarkup()))
+    _answer(call)
+
+
+# ---------------------------------------------------------------------------
+# Factory reset: the catalog back to the shape the game shipped with
+# ---------------------------------------------------------------------------
+
+
+def _factory_confirm(call):
+    if not _require_owner(call):
+        return
+    custom = [row['key'] for row in catalog.entries(include_hidden=True) if not row['builtin']]
+    customs = (_t('factory_customs', keys=_esc(', '.join(custom))) if custom
+               else _t('factory_customs_none'))
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(_t('btn_confirm_factory'), callback_data='ap:facc'))
+    _back_row(markup, 'ap:home')
+    _show(call, _t('factory_confirm', customs=customs), markup)
+    _answer(call)
+
+
+def _factory_apply(call):
+    if not _require_owner(call):
+        return
+    try:
+        _removed, kept = catalog.factory_reset()
+    except catalog.CatalogError as exc:
+        _answer(call, STRINGS[_lang].get('cat_err_' + str(exc), _t('err_generic')), alert=True)
+        return
+    # The reset is only complete once the log of the edits it undid is gone too.
+    count = clear_log()
+    notify_admins(_t('factory_notice', u=_user_name(call.from_user.id), n=count))
+    text = _t('factory_done')
+    if kept:
+        text += _t('factory_kept', keys=_esc(', '.join(kept)))
+    _show(call, text, _back_row(types.InlineKeyboardMarkup()))
     _answer(call)
 
 

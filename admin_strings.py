@@ -24,7 +24,8 @@ ACTIONS = ('asset_edit', 'feature_toggle', 'weekly_update', 'reset_country', 'lo
 # CatalogError codes that get their own message; anything else falls back to
 # 'err_generic'. Kept next to the strings so the two stay in step.
 CATALOG_ERRORS = ('bad_key', 'exists', 'reserved', 'column_exists', 'bad_kind', 'builtin',
-                  'bad_produces', 'not_a_building', 'not_a_resource', 'bad_resource', 'unknown')
+                  'bad_produces', 'not_a_building', 'not_a_resource', 'bad_resource', 'unknown',
+                  'in_transit', 'guard_unavailable', 'bad_direction')
 
 STRINGS = {
     'fa': {
@@ -195,6 +196,55 @@ STRINGS = {
         'cat_err_not_a_resource': "❌ این مورد منبع نیست.",
         'cat_err_bad_resource': "❌ منبع نامعتبر است.",
         'cat_err_unknown': "❌ چنین نوعی وجود ندارد.",
+        'act_asset_remove': "حذف کامل نوع دارایی",
+        'act_catalog_reset': "بازنشانی کامل فهرست دارایی‌ها",
+        'act_log_clear': "پاک‌سازی گزارش اقدامات",
+        'btn_cat_up': "⬆️ بالاتر",
+        'btn_cat_down': "⬇️ پایین‌تر",
+        'cat_rank': "📍 جایگاه در فهرست: {place} از {total}",
+        'cat_at_top': "همین حالا اول فهرست است.",
+        'cat_at_bottom': "همین حالا آخر فهرست است.",
+        'cat_moved': "✅ جابه‌جا شد.",
+        'btn_cat_delete': "❌ حذف کامل و همیشگی",
+        'btn_cat_delete_yes': "🔥 بله، برای همیشه حذف کن",
+        'cat_delete_confirm': "🔥 <b>حذف کامل «{label}»</b>\n<blockquote>کلید <code>{key}</code> "
+                              "به‌طور کامل از پایگاه داده پاک می‌شود و مقدار ذخیره‌شدهٔ همهٔ "
+                              "کشورها برای آن از بین می‌رود.\n\n{holders}\n\n"
+                              "⚠️ این کار برگشت‌پذیر نیست. اگر فقط می‌خواهید موقتاً از بازی "
+                              "خارج شود، به‌جای این از «حذف از بازی» استفاده کنید.</blockquote>",
+        'cat_delete_holders': "📊 {n} کشور مقدار غیرصفر برای این نوع دارند.",
+        'cat_delete_holders_none': "📊 هیچ کشوری مقدار غیرصفری برای این نوع ندارد.",
+        'cat_deleted': "🔥 «{label}» برای همیشه حذف شد.",
+        'cat_deleted_kept_column': "🔥 «{label}» از بازی حذف شد، اما نسخهٔ SQLite این سرور "
+                                   "قدیمی‌تر از ۳٫۳۵ است و ستون آن در پایگاه داده باقی ماند. "
+                                   "این ستون دیگر جایی استفاده نمی‌شود.",
+        'cat_err_in_transit': "❌ همین حالا یک محمولهٔ تجاری این مورد را حمل می‌کند. "
+                              "تا رسیدن یا لغو آن محموله نمی‌توان حذفش کرد.",
+        'cat_err_guard_unavailable': "❌ وضعیت محموله‌های در راه مشخص نشد، پس حذف انجام نشد. "
+                                     "دوباره تلاش کنید.",
+        'cat_err_bad_direction': "❌ جهت جابه‌جایی نامعتبر است.",
+        'btn_factory': "🔥 بازنشانی کامل فهرست دارایی‌ها",
+        'btn_confirm_factory': "🔥 بله، همه را به حالت اولیه برگردان",
+        'factory_confirm': "🔥 <b>بازنشانی کامل فهرست دارایی‌ها</b>\n<blockquote>"
+                           "{customs}\n\nهمهٔ انواع پیش‌فرض (نام، مقدار اولیه، ترتیب، تولید و "
+                           "هزینهٔ ارتقا) دقیقاً به همان چیزی که بازی با آن منتشر شده بازمی‌گردند، "
+                           "و گزارش اقدامات هم پاک می‌شود.\n\n"
+                           "✅ دارایی فعلی کشورها دست‌نخورده می‌ماند.\n"
+                           "⚠️ این کار برگشت‌پذیر نیست.</blockquote>",
+        'factory_customs': "🗑 این انواع افزوده‌شده برای همیشه حذف می‌شوند: {keys}",
+        'factory_customs_none': "🗑 هیچ نوع افزوده‌شده‌ای برای حذف وجود ندارد.",
+        'factory_done': "🔥 فهرست دارایی‌ها به حالت اولیه بازگشت و گزارش اقدامات پاک شد.",
+        'factory_kept': "\n\nℹ️ ستون این موارد در پایگاه داده باقی ماند (SQLite قدیمی): {keys}",
+        'btn_log_clear': "🧹 پاک کردن گزارش",
+        'btn_confirm_log_clear': "🧹 بله، گزارش را پاک کن",
+        'log_clear_confirm': "🧹 <b>پاک کردن گزارش اقدامات</b>\n<blockquote>هر {n} ردیف گزارش "
+                             "حذف می‌شود و صفحهٔ گزارش خالی خواهد بود.\n\n"
+                             "ℹ️ به همهٔ ادمین‌ها پیام داده می‌شود که چه کسی گزارش را پاک کرده "
+                             "است.\n⚠️ این کار برگشت‌پذیر نیست.</blockquote>",
+        'log_clear_done': "🧹 گزارش اقدامات پاک شد ({n} ردیف).",
+        'log_clear_notice': "🧹 گزارش اقدامات توسط {u} پاک شد ({n} ردیف).",
+        'factory_notice': "🔥 {u} فهرست دارایی‌ها را به حالت اولیه بازگرداند و گزارش اقدامات "
+                          "را پاک کرد ({n} ردیف).",
     },
     'en': {
         'not_admin': "You are not an admin.",
@@ -364,6 +414,56 @@ STRINGS = {
         'cat_err_not_a_resource': "❌ That entry is not a resource.",
         'cat_err_bad_resource': "❌ Invalid resource.",
         'cat_err_unknown': "❌ No such type.",
+        'act_asset_remove': "asset type destroyed",
+        'act_catalog_reset': "asset catalog factory reset",
+        'act_log_clear': "action log cleared",
+        'btn_cat_up': "⬆️ Move up",
+        'btn_cat_down': "⬇️ Move down",
+        'cat_rank': "📍 Place in the list: {place} of {total}",
+        'cat_at_top': "Already first in the list.",
+        'cat_at_bottom': "Already last in the list.",
+        'cat_moved': "✅ Moved.",
+        'btn_cat_delete': "❌ Delete permanently",
+        'btn_cat_delete_yes': "🔥 Yes, delete it for good",
+        'cat_delete_confirm': "🔥 <b>Permanently delete “{label}”</b>\n<blockquote>The key "
+                              "<code>{key}</code> will be erased from the database, and every "
+                              "country's stored value for it goes with it.\n\n{holders}\n\n"
+                              "⚠️ This cannot be undone. To take it out of the game "
+                              "temporarily, use “Remove from the game” instead.</blockquote>",
+        'cat_delete_holders': "📊 {n} countries hold a non-zero value for this type.",
+        'cat_delete_holders_none': "📊 No country holds a non-zero value for this type.",
+        'cat_deleted': "🔥 “{label}” was deleted for good.",
+        'cat_deleted_kept_column': "🔥 “{label}” is out of the game, but this server's SQLite is "
+                                   "older than 3.35, so its column stayed in the database. "
+                                   "Nothing reads that column any more.",
+        'cat_err_in_transit': "❌ A trade in flight is carrying this right now. It cannot be "
+                              "deleted until that shipment arrives or is cancelled.",
+        'cat_err_guard_unavailable': "❌ Could not check what is in flight, so nothing was "
+                                     "deleted. Please try again.",
+        'cat_err_bad_direction': "❌ Invalid direction.",
+        'btn_factory': "🔥 Factory-reset the asset catalog",
+        'btn_confirm_factory': "🔥 Yes, restore everything to shipped values",
+        'factory_confirm': "🔥 <b>Factory-reset the asset catalog</b>\n<blockquote>{customs}\n\n"
+                           "Every shipped type (name, starting amount, order, production and "
+                           "upgrade cost) goes back to exactly what the game shipped with, and "
+                           "the action log is cleared.\n\n"
+                           "✅ Countries keep their current assets.\n"
+                           "⚠️ This cannot be undone.</blockquote>",
+        'factory_customs': "🗑 These added types will be deleted for good: {keys}",
+        'factory_customs_none': "🗑 There are no added types to delete.",
+        'factory_done': "🔥 The asset catalog is back to its shipped state and the action log "
+                        "is empty.",
+        'factory_kept': "\n\nℹ️ These kept their database column (old SQLite): {keys}",
+        'btn_log_clear': "🧹 Clear the log",
+        'btn_confirm_log_clear': "🧹 Yes, clear the log",
+        'log_clear_confirm': "🧹 <b>Clear the action log</b>\n<blockquote>All {n} rows are "
+                             "deleted and the log screen will be empty.\n\n"
+                             "ℹ️ Every admin gets a message saying who cleared it.\n"
+                             "⚠️ This cannot be undone.</blockquote>",
+        'log_clear_done': "🧹 Action log cleared ({n} rows).",
+        'log_clear_notice': "🧹 {u} cleared the action log ({n} rows).",
+        'factory_notice': "🔥 {u} factory-reset the asset catalog and cleared the action log "
+                          "({n} rows).",
     },
     'tr': {
         'not_admin': "Yönetici değilsiniz.",
@@ -533,5 +633,54 @@ STRINGS = {
         'cat_err_not_a_resource': "❌ Bu girdi bir kaynak değil.",
         'cat_err_bad_resource': "❌ Geçersiz kaynak.",
         'cat_err_unknown': "❌ Böyle bir tür yok.",
+        'act_asset_remove': "varlık türü kalıcı olarak silindi",
+        'act_catalog_reset': "varlık kataloğu fabrika ayarlarına döndürüldü",
+        'act_log_clear': "işlem kaydı temizlendi",
+        'btn_cat_up': "⬆️ Yukarı taşı",
+        'btn_cat_down': "⬇️ Aşağı taşı",
+        'cat_rank': "📍 Listedeki yeri: {total} içinde {place}",
+        'cat_at_top': "Zaten listenin başında.",
+        'cat_at_bottom': "Zaten listenin sonunda.",
+        'cat_moved': "✅ Taşındı.",
+        'btn_cat_delete': "❌ Kalıcı olarak sil",
+        'btn_cat_delete_yes': "🔥 Evet, tamamen sil",
+        'cat_delete_confirm': "🔥 <b>“{label}” kalıcı olarak silinsin mi?</b>\n<blockquote>"
+                              "<code>{key}</code> anahtarı veritabanından tamamen silinecek ve "
+                              "her ülkenin bu tür için kayıtlı değeri de gidecek.\n\n{holders}"
+                              "\n\n⚠️ Bu geri alınamaz. Yalnızca geçici olarak oyundan çıkarmak "
+                              "için “Oyundan kaldır” seçeneğini kullanın.</blockquote>",
+        'cat_delete_holders': "📊 {n} ülkenin bu tür için sıfırdan farklı değeri var.",
+        'cat_delete_holders_none': "📊 Hiçbir ülkenin bu tür için sıfırdan farklı değeri yok.",
+        'cat_deleted': "🔥 “{label}” kalıcı olarak silindi.",
+        'cat_deleted_kept_column': "🔥 “{label}” oyundan çıktı, ancak bu sunucudaki SQLite "
+                                   "3.35'ten eski olduğu için sütunu veritabanında kaldı. "
+                                   "Artık o sütunu hiçbir yer okumuyor.",
+        'cat_err_in_transit': "❌ Yolda olan bir ticaret şu anda bunu taşıyor. Sevkiyat varana "
+                              "veya iptal edilene kadar silinemez.",
+        'cat_err_guard_unavailable': "❌ Yolda ne olduğu kontrol edilemedi, bu yüzden hiçbir şey "
+                                     "silinmedi. Lütfen tekrar deneyin.",
+        'cat_err_bad_direction': "❌ Geçersiz yön.",
+        'btn_factory': "🔥 Varlık kataloğunu fabrika ayarlarına döndür",
+        'btn_confirm_factory': "🔥 Evet, her şeyi ilk haline döndür",
+        'factory_confirm': "🔥 <b>Varlık kataloğunu fabrika ayarlarına döndür</b>\n<blockquote>"
+                           "{customs}\n\nOyunla gelen her tür (ad, başlangıç miktarı, sıra, "
+                           "üretim ve yükseltme maliyeti) tam olarak oyunun çıktığı haline "
+                           "döner ve işlem kaydı temizlenir.\n\n"
+                           "✅ Ülkelerin mevcut varlıkları korunur.\n"
+                           "⚠️ Bu geri alınamaz.</blockquote>",
+        'factory_customs': "🗑 Şu eklenen türler kalıcı olarak silinecek: {keys}",
+        'factory_customs_none': "🗑 Silinecek eklenmiş tür yok.",
+        'factory_done': "🔥 Varlık kataloğu ilk haline döndü ve işlem kaydı boşaltıldı.",
+        'factory_kept': "\n\nℹ️ Şunların veritabanı sütunu kaldı (eski SQLite): {keys}",
+        'btn_log_clear': "🧹 Kaydı temizle",
+        'btn_confirm_log_clear': "🧹 Evet, kaydı temizle",
+        'log_clear_confirm': "🧹 <b>İşlem kaydını temizle</b>\n<blockquote>{n} satırın tamamı "
+                             "silinecek ve kayıt ekranı boş olacak.\n\n"
+                             "ℹ️ Kaydı kimin temizlediği tüm yöneticilere bildirilir.\n"
+                             "⚠️ Bu geri alınamaz.</blockquote>",
+        'log_clear_done': "🧹 İşlem kaydı temizlendi ({n} satır).",
+        'log_clear_notice': "🧹 {u} işlem kaydını temizledi ({n} satır).",
+        'factory_notice': "🔥 {u} varlık kataloğunu fabrika ayarlarına döndürdü ve işlem kaydını "
+                          "temizledi ({n} satır).",
     },
 }

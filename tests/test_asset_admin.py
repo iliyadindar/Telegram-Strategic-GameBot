@@ -240,5 +240,117 @@ class HideScreenTest(CatalogScreenTest):
         self.assertIn('money', catalog.all_keys())
 
 
+class ReorderScreenTest(CatalogScreenTest):
+
+    def resources(self):
+        return list(catalog.keys('resource'))
+
+    def test_moving_up_reorders_the_list(self):
+        third = self.resources()[2]
+        self.tap(f'ap:catmv:{third}:up')
+        self.assertEqual(self.resources()[1], third)
+
+    def test_moving_down_reorders_the_list(self):
+        first = self.resources()[0]
+        self.tap(f'ap:catmv:{first}:down')
+        self.assertEqual(self.resources()[1], first)
+
+    def test_a_new_type_can_be_walked_above_money(self):
+        catalog.add('peoples', 'resource', {'en': 'Peoples'})
+        for _ in range(len(self.resources())):
+            self.tap('ap:catmv:peoples:up')
+        self.assertEqual(self.resources()[0], 'peoples')
+
+    def test_the_top_entry_offers_no_up_button(self):
+        self.tap(f'ap:cate:{self.resources()[0]}')
+        self.assertNotIn(f'ap:catmv:{self.resources()[0]}:up', self.bot.last_keyboard())
+
+    def test_the_bottom_entry_offers_no_down_button(self):
+        last = self.resources()[-1]
+        self.tap(f'ap:cate:{last}')
+        self.assertNotIn(f'ap:catmv:{last}:down', self.bot.last_keyboard())
+
+    def test_a_middle_entry_offers_both(self):
+        middle = self.resources()[2]
+        self.tap(f'ap:cate:{middle}')
+        keys = self.bot.last_keyboard()
+        self.assertIn(f'ap:catmv:{middle}:up', keys)
+        self.assertIn(f'ap:catmv:{middle}:down', keys)
+
+    def test_the_entry_screen_shows_the_place(self):
+        self.tap(f'ap:cate:{self.resources()[0]}')
+        self.assertIn('Place in the list: 1', self.screen())
+
+    def test_moving_is_logged(self):
+        self.tap(f'ap:catmv:{self.resources()[2]}:up')
+        self.assertEqual(admin_panel.recent_log()[0]['action'], 'asset_type_edit')
+
+    def test_reordering_is_open_to_admins(self):
+        third = self.resources()[2]
+        self.tap(f'ap:catmv:{third}:up', user_id=PLAYER)
+        self.assertEqual(self.resources()[2], third, 'a stranger is still not an admin')
+
+
+class DeleteScreenTest(CatalogScreenTest):
+
+    def setUp(self):
+        super().setUp()
+        catalog.add('archers', 'unit', {'en': 'Archers'}, default_value=750)
+        self.conn.execute("INSERT INTO users (user_id, group_id) VALUES (1, ?)", (GROUP,))
+        self.conn.commit()
+        self.addCleanup(catalog.set_delete_guard, None)
+
+    def columns(self):
+        return {row[1] for row in self.conn.execute("PRAGMA table_info(users)").fetchall()}
+
+    def test_the_entry_screen_offers_delete_for_a_custom_type(self):
+        self.tap('ap:cate:archers')
+        self.assertIn('ap:catdel:archers', self.bot.last_keyboard())
+
+    def test_a_builtin_offers_no_delete(self):
+        self.tap('ap:cate:money')
+        self.assertNotIn('ap:catdel:money', self.bot.last_keyboard())
+
+    def test_the_confirmation_counts_who_holds_it(self):
+        self.tap('ap:catdel:archers')
+        self.assertIn('1 countries hold', self.screen())
+        self.assertIn('ap:catdelc:archers', self.bot.last_keyboard())
+
+    def test_the_confirmation_says_so_when_nobody_holds_it(self):
+        self.conn.execute("UPDATE users SET archers=0")
+        self.conn.commit()
+        self.tap('ap:catdel:archers')
+        self.assertIn('No country holds', self.screen())
+
+    def test_confirming_destroys_the_column(self):
+        self.tap('ap:catdelc:archers')
+        self.assertNotIn('archers', self.columns())
+        self.assertIsNone(catalog.entry('archers'))
+
+    def test_deleting_is_logged(self):
+        self.tap('ap:catdelc:archers')
+        self.assertEqual(admin_panel.recent_log()[0]['action'], 'asset_remove')
+
+    def test_a_stranger_cannot_reach_the_confirmation(self):
+        self.tap('ap:catdel:archers', user_id=PLAYER)
+        self.assertNotIn('ap:catdelc:archers', self.bot.last_keyboard())
+
+    def test_a_stranger_cannot_delete(self):
+        self.tap('ap:catdelc:archers', user_id=PLAYER)
+        self.assertIn('archers', self.columns())
+
+    def test_a_builtin_cannot_be_deleted_from_the_screen(self):
+        self.tap('ap:catdelc:money')
+        self.assertIn('money', self.columns())
+
+    def test_a_type_in_flight_is_refused_with_an_alert(self):
+        catalog.set_delete_guard(lambda: {'archers'})
+        self.tap('ap:catdelc:archers')
+        _id, text, alert = self.bot.last_answer()
+        self.assertTrue(alert)
+        self.assertIn('trade in flight', text)
+        self.assertIn('archers', self.columns())
+
+
 if __name__ == '__main__':
     unittest.main()
