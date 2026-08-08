@@ -29,6 +29,7 @@ without moving any prices.
 """
 
 import re
+import sqlite3
 import threading
 
 MODES = ('sea', 'land')
@@ -333,6 +334,14 @@ def _check_id(nid):
     return nid
 
 
+def check_new_id(nid):
+    """Raise MapError unless `nid` is a usable id for a brand-new node."""
+    _check_id(nid)
+    if _q("SELECT 1 FROM trade_nodes WHERE id=?", (nid,)):
+        raise MapError('exists')
+    return nid
+
+
 # ---------------------------------------------------------------------------
 # Reading
 # ---------------------------------------------------------------------------
@@ -509,10 +518,15 @@ def set_home(nid, home):
 
 
 def remove_node(nid):
-    """Delete a node, its labels and every edge that touched it.
+    """Delete a node, its labels, its edges and every reference to it.
 
     Refuses while a trade in flight still has to pass through it — the ticker
     walks that stored route leg by leg and names each node as it goes.
+
+    A node id is referenced from three places outside this module's own tables,
+    and a dangling reference is worse than a missing node: a country whose
+    home_sea points at nothing simply cannot trade, with no error to explain
+    why. So they are cleared here, in the same transaction as the delete.
     """
     _require_node(nid)
     if nid in nodes_in_transit():
@@ -521,6 +535,21 @@ def remove_node(nid):
         _conn.execute("DELETE FROM trade_edges WHERE a=? OR b=?", (nid, nid))
         _conn.execute("DELETE FROM trade_node_labels WHERE node_id=?", (nid,))
         _conn.execute("DELETE FROM trade_nodes WHERE id=?", (nid,))
+        for statement, params in (
+                ("UPDATE users SET home_sea='' WHERE home_sea=?", (nid,)),
+                ("UPDATE users SET home_land='' WHERE home_land=?", (nid,)),
+                ("DELETE FROM chokepoint_owners WHERE node_id=?", (nid,)),
+                # Zeroed rather than deleted: trade_config falls back to the
+                # shipped CONFIG_DEFAULTS, so a deleted row would restore the
+                # old toll — and re-seed it on the next restart.
+                ("INSERT OR REPLACE INTO trade_config (key, value) VALUES (?, 0)",
+                 ('toll_' + nid,))):
+            try:
+                _conn.execute(statement, params)
+            except sqlite3.OperationalError:
+                # Those tables belong to trade_system. When the map is used on
+                # its own they are simply absent, and there is nothing to clear.
+                pass
         _conn.commit()
     _tombstone('node', nid)
     _invalidate()

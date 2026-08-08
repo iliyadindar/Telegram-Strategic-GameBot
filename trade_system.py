@@ -25,6 +25,7 @@ from telebot import types
 
 import asset_catalog
 import trade_map
+import trade_map_admin
 
 # ---------------------------------------------------------------------------
 # Module state
@@ -35,6 +36,7 @@ _ADMIN = 0
 _CHANNEL = None
 _lang = 'fa'
 _is_admin = None     # set by init(); predicate deciding who reaches trd:adm
+_is_owner = None     # set by init(); predicate deciding who may delete map pieces
 _audit = None        # set by init(); optional (actor_id, action, target, detail) sink
 # RLock: refund/credit helpers are called from code that already holds the lock.
 _lock = threading.RLock()
@@ -167,6 +169,8 @@ STRINGS = {
         'btn_home_land': "🏔 تعیین موقعیت زمینی گروه‌ها",
         'btn_cfg': "⚙️ تنظیمات تجارت",
         'btn_owners': "🪙 مالکیت تنگه‌ها و گذرگاه‌ها",
+        'btn_map': "🗺 ویرایش نقشه تجارت",
+        'owner_only': "فقط مالک ربات می‌تواند این کار را انجام دهد.",
         'own_title': "🪙 تنگه‌ها و گذرگاه‌ها (صفحه {p}) — برای تعیین مالک روی یکی بزنید:",
         'own_unowned': "بدون مالک",
         'own_pick': "مالک {node} را انتخاب کنید:",
@@ -273,6 +277,8 @@ STRINGS = {
         'btn_home_land': "🏔 Set groups' land locations",
         'btn_cfg': "⚙️ Trade settings",
         'btn_owners': "🪙 Chokepoint ownership",
+        'btn_map': "🗺 Edit the trade map",
+        'owner_only': "Only the bot owner can do that.",
         'own_title': "🪙 Straits, canals and passes (page {p}) — tap one to set its owner:",
         'own_unowned': "unowned",
         'own_pick': "Choose the owner of {node}:",
@@ -376,6 +382,8 @@ STRINGS = {
         'btn_home_land': "🏔 Grupların kara konumlarını ayarla",
         'btn_cfg': "⚙️ Ticaret ayarları",
         'btn_owners': "🪙 Boğaz ve geçit sahipliği",
+        'btn_map': "🗺 Ticaret haritasını düzenle",
+        'owner_only': "Bunu yalnızca bot sahibi yapabilir.",
         'own_title': "🪙 Boğazlar, kanallar ve geçitler (sayfa {p}) — sahibini ayarlamak için birine dokunun:",
         'own_unowned': "sahipsiz",
         'own_pick': "{node} sahibini seçin:",
@@ -416,9 +424,10 @@ STRINGS = {
 # ---------------------------------------------------------------------------
 
 
-def init(bot, conn, admin_id, channel_id, lang='fa', is_admin=None, audit=None):
+def init(bot, conn, admin_id, channel_id, lang='fa', is_admin=None, audit=None,
+         is_owner=None):
     """Wire the trade system into a running bot. Call once at startup."""
-    global _bot, _conn, _ADMIN, _CHANNEL, _lang, _ticker_started, _is_admin, _audit
+    global _bot, _conn, _ADMIN, _CHANNEL, _lang, _ticker_started, _is_admin, _is_owner, _audit
     assert lang in STRINGS, f"unsupported lang: {lang}"
     assert set(STRINGS['fa']) == set(STRINGS['en']) == set(STRINGS['tr']), \
         "STRINGS language key sets differ"
@@ -430,6 +439,8 @@ def init(bot, conn, admin_id, channel_id, lang='fa', is_admin=None, audit=None):
     # admin_panel supplies this so promoted admins reach the trade screens too;
     # without it only the owner id from the config counts.
     _is_admin = is_admin if is_admin is not None else (lambda uid: uid == admin_id)
+    # Deleting part of the map is owner-only; editing it is not.
+    _is_owner = is_owner if is_owner is not None else (lambda uid: uid == admin_id)
     _audit = audit       # admin_panel.log, so trade admin actions reach the action log
     _migrate()
     _seed_config()
@@ -437,6 +448,8 @@ def init(bot, conn, admin_id, channel_id, lang='fa', is_admin=None, audit=None):
     # convoy is still sailing towards.
     trade_map.init(conn)
     trade_map.set_node_guard(active_route_nodes)
+    trade_map_admin.init(bot, lang, _require_admin, _require_owner, _answer, _next_step, _log,
+                         _toll, _set_toll, _owner_name)
     if not _ticker_started:
         _ticker_started = True
         t = threading.Thread(target=_ticker_loop, daemon=True)
@@ -671,6 +684,16 @@ def _set_owner(nid, gid):
         else:
             _conn.execute("DELETE FROM chokepoint_owners WHERE node_id=?", (nid,))
         _conn.commit()
+
+
+def _set_toll(nid, amount):
+    set_cfg('toll_' + nid, max(0, int(amount)))
+
+
+def _owner_name(nid):
+    """The title of the group that owns a chokepoint, or None."""
+    gid = _owner_of(nid)
+    return _title(gid) if gid else None
 
 
 def _toll_for(nid, sender_gid=None):
@@ -920,6 +943,8 @@ def handle_callback(call):
             _photo_ask(call)
         elif op == 'phc':
             _photo_clear(call)
+        elif op in trade_map_admin.OPS:
+            trade_map_admin.handle(call, parts)
         else:
             _answer(call, _t('err_generic'))
     except Exception:
@@ -1587,6 +1612,14 @@ def _admin_check(user_id):
     return _is_admin(user_id) if _is_admin is not None else (user_id == _ADMIN)
 
 
+def _require_owner(call):
+    if not (_is_owner(call.from_user.id) if _is_owner is not None
+            else call.from_user.id == _ADMIN):
+        _answer(call, _t('owner_only'), alert=True)
+        return False
+    return True
+
+
 def _log(actor_id, action, target='', detail=''):
     """Forward an admin mutation to the dashboard's action log, if wired."""
     if _audit is None:
@@ -1604,6 +1637,7 @@ def _admin_menu(call):
     markup.add(types.InlineKeyboardButton(_t('btn_home_sea'), callback_data='trd:hm:s'),
                types.InlineKeyboardButton(_t('btn_home_land'), callback_data='trd:hm:l'),
                types.InlineKeyboardButton(_t('btn_owners'), callback_data='trd:ow:0'),
+               types.InlineKeyboardButton(_t('btn_map'), callback_data='trd:map'),
                types.InlineKeyboardButton(_t('btn_cfg'), callback_data='trd:cfg:0'),
                types.InlineKeyboardButton(_t('btn_photo'), callback_data='trd:ph'))
     _bot.send_message(call.message.chat.id, _t('adm_title'), reply_markup=markup)

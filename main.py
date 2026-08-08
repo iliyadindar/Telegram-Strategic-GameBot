@@ -7,6 +7,7 @@ import admin_panel
 import asset_catalog
 import asset_ui
 import bot_config
+import trade_map_admin
 import trade_system
 
 # Credentials are never hardcoded: they come from the environment, from
@@ -75,7 +76,8 @@ admin_panel.init(bot, conn, ADMIN_ID, CHANNEL_ID, WAR_CHANNEL_ID, lang='fa',
 
 # World trade system (sea + land routes, tolls, live convoy tracking)
 trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='fa',
-                  is_admin=admin_panel.is_admin, audit=admin_panel.log)
+                  is_admin=admin_panel.is_admin, is_owner=admin_panel.is_owner,
+                  audit=admin_panel.log)
 
 # Destroying an asset type drops its `users` column. A trade still carrying
 # that good would then fail to refund or deliver, so the catalog asks the trade
@@ -89,7 +91,10 @@ asset_ui.init(bot, conn, lang='fa', audit=admin_panel.log,
 
 # 'trd:' callbacks that belong to the trade admin screens. They stay reachable
 # even when the player-facing trade feature is switched off.
-TRADE_ADMIN_OPS = ('adm', 'hm', 'hg', 'h', 'cfg', 'ck', 'ow', 'on', 'og', 'ph', 'phs', 'phc')
+# Trade admin screens stay reachable even when the player-facing trade feature
+# is switched off. The map editor's ops come from the module that owns them.
+TRADE_ADMIN_OPS = (('adm', 'hm', 'hg', 'h', 'cfg', 'ck', 'ow', 'on', 'og', 'ph', 'phs', 'phc')
+                   + tuple(trade_map_admin.OPS))
 
 
 def escape_html(text):

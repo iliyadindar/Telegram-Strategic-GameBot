@@ -273,6 +273,49 @@ class NodeRemovalTest(MapTestCase):
         with self.assertRaises(trade_map.MapError):
             trade_map.remove_node('atlantis')
 
+    def test_removal_works_without_the_trade_system_tables(self):
+        # The map is usable on its own; the cascade must not need those tables.
+        trade_map.remove_node('sue')
+        self.assertNotIn('sue', trade_map.nodes('sea'))
+
+
+class RemovalCascadeTest(unittest.TestCase):
+    """A deleted node must leave no dangling reference behind."""
+
+    def setUp(self):
+        self.conn = make_db()
+        self.addCleanup(self.conn.close)
+        trade_system.init(StubBot(), self.conn, 1, '@news', lang='en')
+        self.conn.execute("INSERT INTO users (user_id, group_id, home_sea, home_land) "
+                          "VALUES (1, -1, 'sue', 'sin')")
+        self.conn.commit()
+
+    def test_a_country_based_there_loses_its_home(self):
+        trade_map.remove_node('sue')
+        row = self.conn.execute("SELECT home_sea FROM users WHERE group_id=-1").fetchone()
+        self.assertEqual(row[0], '')
+
+    def test_the_other_home_is_left_alone(self):
+        trade_map.remove_node('sue')
+        row = self.conn.execute("SELECT home_land FROM users WHERE group_id=-1").fetchone()
+        self.assertEqual(row[0], 'sin')
+
+    def test_its_owner_row_goes(self):
+        trade_system._set_owner('sue', -1)
+        trade_map.remove_node('sue')
+        self.assertIsNone(trade_system._owner_of('sue'))
+
+    def test_its_toll_goes(self):
+        trade_system.set_cfg('toll_sue', 900)
+        trade_map.remove_node('sue')
+        self.assertEqual(trade_system._toll('sue'), 0)
+
+    def test_a_rebuilt_node_does_not_inherit_the_old_toll(self):
+        trade_system.set_cfg('toll_sue', 900)
+        trade_map.remove_node('sue')
+        trade_map.add_node('sea', 'sue', 'canal', False, {'en': 'Suez Canal'})
+        self.assertEqual(trade_system._toll('sue'), 0)
+
 
 class LiveTradeGuardTest(unittest.TestCase):
     """The guards read from real trades rather than a hand-written set."""
