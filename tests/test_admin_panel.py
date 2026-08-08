@@ -397,6 +397,116 @@ class NotifyAdminsTest(PanelTestCase):
         self.assertEqual([c for c, _ in self.bot.sent], [HELPER])
 
 
+class LogClearTest(PanelTestCase):
+
+    def setUp(self):
+        super().setUp()
+        admin_panel._admin_add_apply(Message(Chat(OWNER, 'private'), User(OWNER),
+                                             text=str(HELPER)), OWNER)
+        for i in range(3):
+            admin_panel.log(OWNER, 'asset_edit', f'g{i}')
+
+    def test_clearing_empties_the_log(self):
+        admin_panel.handle_callback(self.call('ap:lgcc'))
+        self.assertEqual(admin_panel.recent_log(), [])
+
+    def test_clearing_reports_how_many_rows_went(self):
+        admin_panel.handle_callback(self.call('ap:lgcc'))
+        self.assertIn('4', self.bot.edits[-1][2])  # 3 edits + the admin_add
+
+    def test_the_wipe_leaves_no_entry_of_its_own(self):
+        admin_panel.handle_callback(self.call('ap:lgcc'))
+        admin_panel.handle_callback(self.call('ap:log:0'))
+        self.assertIn('No admin action', self.bot.edits[-1][2])
+
+    def test_every_admin_is_told_who_cleared_it(self):
+        self.bot.sent.clear()
+        admin_panel.handle_callback(self.call('ap:lgcc'))
+        told = [chat for chat, _ in self.bot.sent]
+        self.assertIn(HELPER, told)
+        self.assertIn('cleared the action log', self.bot.sent[-1][1])
+
+    def test_a_plain_admin_cannot_clear_the_log(self):
+        admin_panel.handle_callback(self.call('ap:lgcc', user_id=HELPER))
+        self.assertNotEqual(admin_panel.recent_log(), [])
+
+    def test_a_stranger_cannot_clear_the_log(self):
+        admin_panel.handle_callback(self.call('ap:lgcc', user_id=PLAYER))
+        self.assertNotEqual(admin_panel.recent_log(), [])
+
+    def test_the_clear_button_is_offered_to_the_owner_only(self):
+        admin_panel.handle_callback(self.call('ap:log:0'))
+        self.assertIn('ap:lgc', self.bot.last_keyboard())
+        admin_panel.handle_callback(self.call('ap:log:0', user_id=HELPER))
+        self.assertNotIn('ap:lgc', self.bot.last_keyboard())
+
+    def test_the_confirmation_names_the_row_count(self):
+        admin_panel.handle_callback(self.call('ap:lgc'))
+        self.assertIn('4', self.bot.edits[-1][2])
+        self.assertIn('ap:lgcc', self.bot.last_keyboard())
+
+
+class FactoryResetTest(PanelTestCase):
+
+    def setUp(self):
+        super().setUp()
+        add_group(self.conn, PLAYER, GROUP_A, money=7)
+        catalog.add('archers', 'unit', {'en': 'Archers'}, default_value=750)
+        self.addCleanup(catalog.set_delete_guard, None)
+
+    def columns(self):
+        return {row[1] for row in self.conn.execute("PRAGMA table_info(users)").fetchall()}
+
+    def test_reset_destroys_custom_types(self):
+        admin_panel.handle_callback(self.call('ap:facc'))
+        self.assertNotIn('archers', self.columns())
+
+    def test_reset_restores_builtin_tuning(self):
+        catalog.set_default('money', 999999)
+        admin_panel.handle_callback(self.call('ap:facc'))
+        self.assertEqual(catalog.defaults()['money'], catalog.RESOURCE_DEFAULT)
+
+    def test_reset_leaves_group_balances_alone(self):
+        admin_panel.handle_callback(self.call('ap:facc'))
+        row = self.conn.execute("SELECT money FROM users WHERE group_id=?", (GROUP_A,)).fetchone()
+        self.assertEqual(row[0], 7)
+
+    def test_reset_also_empties_the_log(self):
+        admin_panel.log(OWNER, 'asset_edit', 'something')
+        admin_panel.handle_callback(self.call('ap:facc'))
+        self.assertEqual(admin_panel.recent_log(), [])
+
+    def test_a_plain_admin_cannot_factory_reset(self):
+        admin_panel._admin_add_apply(Message(Chat(OWNER, 'private'), User(OWNER),
+                                             text=str(HELPER)), OWNER)
+        admin_panel.handle_callback(self.call('ap:facc', user_id=HELPER))
+        self.assertIn('archers', self.columns())
+
+    def test_a_key_in_flight_blocks_the_reset(self):
+        catalog.set_delete_guard(lambda: {'archers'})
+        admin_panel.handle_callback(self.call('ap:facc'))
+        self.assertIn('archers', self.columns())
+        self.assertTrue(self.bot.last_answer()[2], 'the refusal should be an alert')
+
+    def test_the_confirmation_names_what_will_be_destroyed(self):
+        admin_panel.handle_callback(self.call('ap:fac'))
+        self.assertIn('archers', self.bot.edits[-1][2])
+        self.assertIn('ap:facc', self.bot.last_keyboard())
+
+    def test_the_confirmation_copes_with_nothing_to_destroy(self):
+        catalog.remove('archers')
+        admin_panel.handle_callback(self.call('ap:fac'))
+        self.assertIn('ap:facc', self.bot.last_keyboard())
+
+    def test_the_panel_offers_it_to_the_owner_only(self):
+        admin_panel._admin_add_apply(Message(Chat(OWNER, 'private'), User(OWNER),
+                                             text=str(HELPER)), OWNER)
+        admin_panel.handle_callback(self.call('ap:home'))
+        self.assertIn('ap:fac', self.bot.last_keyboard())
+        admin_panel.handle_callback(self.call('ap:home', user_id=HELPER))
+        self.assertNotIn('ap:fac', self.bot.last_keyboard())
+
+
 class StringsIntegrityTest(unittest.TestCase):
 
     def test_all_languages_define_the_same_keys(self):

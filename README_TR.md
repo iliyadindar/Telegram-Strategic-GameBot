@@ -83,6 +83,7 @@ Lordlar, tamamen cam düğmelerle, iki dünya haritası üzerinden birbirleriyle
 - **Canlı takip** — bot sevkiyatı gerçek zamanlı ilerletir ve her ara noktada takip mesajını düzenler ("sevkiyat Süveyş Kanalı geçişini tamamladı — ücret ödendi"); kalkış ve varışlar oyun kanalına duyurulur.
 - **Boğaz sahipliği** 🪙 — yönetici herhangi bir boğaz, kanal veya geçidin sahipliğini bir gruba verebilir: geçiş ücretleri o grubun hazinesine gider ve kendi sevkiyatları ücretsiz geçer. Sahipsiz geçişlerin ücretleri yakılır.
 - **Yönetici ayarları** — her grubun deniz/kara konumu ile tüm hız, ücret, geçiş ve kapasite değerleri oyun içinden düzenlenebilir.
+- **Düzenlenebilir harita** 🗺 — dünyanın kendisi koda değil veriye dayanır. 🗺 *Ticaret haritasını düzenle* ekranından bir yönetici her denizi, boğazı veya bölgeyi üç dilde yeniden adlandırabilir, türünü değiştirebilir, ülkelerin orada konuşlanıp konuşlanamayacağına karar verebilir, geçiş ücretini belirleyebilir ve tamamen yeni yerler ve yollar çizebilir. Her yolun bir **uzunluğu** (ücreti ve hangi rotanın en ucuz olduğunu belirler) ve isteğe bağlı bir **kesin yolculuk süresi** vardır; böylece bir yol, fiyatlara dokunmadan yeniden zamanlanabilir. Bir yeri veya yolu silmek yalnızca sahibe açıktır ve bir konvoy hâlâ ona ihtiyaç duyuyorsa reddedilir.
 - **Ticaret fotoğrafı** 🖼 — bir yönetici ticaret mesajlarına fotoğraf ekleyebilir; teklif kartı, canlı takip mesajı ve kanal duyuruları o zaman altyazılı fotoğraf olarak gönderilir. Telegram'ın 1024 karakterlik altyazı sınırını aşan metinler otomatik olarak düz metne döner.
 
 ---
@@ -97,13 +98,14 @@ Paneli açmak için bir grupta **veya** botun özel sohbetinde `/admin` gönderi
 | 💰 **Ekonomi** | Kaynak başına dünya toplamları ve en zengin grup; gruba göre ayrıntıya inilebilir |
 | ⚔️ **Askeri durum** | Birim türüne göre dünya toplamları ve en güçlü ordu; gruba göre ayrıntıya inilebilir |
 | ⚙️ **Bölümleri aç/kapat** | Her bölüm için bir anahtar — varlıklar, yükseltme, bildiri, özel mesaj, antlaşma, sefer, ticaret, haftalık güncelleme, lord kaydı. Kapatılan bölüm hem `/start` menüsünden kalkar hem de düğmeleri reddedilir; böylece eski bir menüyle atlatılamaz |
-| 🧾 **İşlem kaydı** | Her yönetici değişikliği — kim, ne, ne zaman — en yeniden eskiye, sayfa başına 10 kayıt |
+| 🧾 **İşlem kaydı** | Her yönetici değişikliği — kim, ne, ne zaman — en yeniden eskiye, sayfa başına 10 kayıt. *(yalnızca sahip)* 🧹 **Kaydı temizle** onay adımının ardından kaydı boşaltır; bu işlem kendi izini bırakmaz, bunun yerine tüm yöneticilere mesaj gönderilir |
 | 👑 **Yöneticiler** | *(yalnızca sahip)* Kullanıcının bir mesajını ileterek ya da sayısal kimliğini göndererek yönetici ekleyin ve tekrar çıkarın. Yapılandırmadaki sahip her zaman yöneticidir ve çıkarılamaz |
 | 🧩 **Varlıklar ve birimler** | Kaynak, birim ve bina türlerini ekleyin, yeniden adlandırın, ayarlayın veya kaldırın — [Varlık Kataloğu](#-varlık-kataloğu) |
 | ♻️ **Ülkeyi sıfırla** | Bir grubun kaynaklarını, askerlerini ve binalarını onay adımının ardından başlangıç değerlerine döndürür. Antlaşmalar ve ticaret konumları değişmez; önceki değerler işlem kaydına yazılır |
 | 🖼 **Ticaret fotoğrafı** | Ticaret mesajlarında kullanılan fotoğrafı ayarlayın veya kaldırın |
 | 🖼 **Savaş fotoğrafları** | Kara ve deniz seferi duyuruları için ayrı fotoğraflar ayarlayın veya kaldırın |
-| 🌍 **Ticaret yönetimi** | Mevcut ticaret yönetimi ekranları — konumlar, boğaz sahipliği, ticaret ayarları |
+| 🌍 **Ticaret yönetimi** | Konumlar, boğaz sahipliği, ticaret ayarları ve 🗺 **Ticaret haritasını düzenle** — [Dünya Ticareti](#dünya-ticareti) |
+| 🔥 **Kataloğu fabrika ayarlarına döndür** | *(yalnızca sahip)* Her varlık türünü oyunun çıktığı değerlere döndürür ve işlem kaydını temizler — [Varlık Kataloğu](#-varlık-kataloğu) |
 | 🎮 **Oyun menüsü** | Panelden çıkmadan normal oyuncu menüsünü açar |
 
 ### Lord atama
@@ -139,11 +141,28 @@ Okçular artık varlıklar ekranında, yükseltme menüsünde, haftalık üretim
 | Yükseltme maliyeti | binalar | Kaynakların herhangi bir birleşimi; sıfır o satırı kaldırır |
 | Ticarete açık | kaynaklar | Konvoyların taşıyıp taşıyamayacağını belirler |
 
-### Yerleşik türler ve kaldırma
+### Listedeki sıra
 
-Oyunla gelen 8 kaynak, 10 birim ve 18 bina **yerleşik** olarak kaydedilir. Yeniden adlandırılabilir ve ayarlanabilirler ama kaldırılamazlar; çünkü ticaret sistemi ve savaş akışı onlara anahtarla atıfta bulunur.
+Yeni bir tür her zaman kendi türünün sonuna eklenir ki bu genelde doğru yer değildir. Türün ekranındaki **⬆️ Yukarı taşı / ⬇️ Aşağı taşı** onu komşusuyla yer değiştirir; böylece en son eklediğiniz kaynak paranın üstünde durabilir. Sıralama tür içindedir — önce kaynaklar, sonra birimler, sonra binalar — ve ekran mevcut yeri gösterir (“9 içinde 3”).
 
-Özel bir türü kaldırmak onu **gizler**: her menüden çıkar ama veritabanı sütunu ve sayıları kalır. Geri getirdiğinizde değerler geri döner. Hiçbir şey yok edilmez ve çalışan hiçbir tablo yeniden oluşturulmaz.
+### Yerleşik türler, gizleme ve kalıcı silme
+
+Oyunla gelen 8 kaynak, 10 birim ve 18 bina **yerleşik** olarak kaydedilir. Yeniden adlandırılabilir, ayarlanabilir ve sıraları değiştirilebilir ama asla kaldırılamazlar; çünkü ticaret sistemi ve savaş akışı onlara anahtarla atıfta bulunur.
+
+Özel bir tür iki farklı şekilde ortadan kaldırılabilir:
+
+| | 🗑 **Oyundan kaldır** | ❌ **Kalıcı olarak sil** |
+|---|---|---|
+| Kim | her yönetici | yalnızca sahip |
+| Etkisi | her menüden çıkar | katalog satırı, adlar, yükseltme maliyetleri ve `users` sütunu yok edilir |
+| Sayılar | korunur — geri getirince dönerler | temelli gider |
+| Geri alınır mı | evet | hayır |
+
+Kalıcı silme, türe atıfta bulunan her şeyi de temizler: onu üreten bir bina artık hiçbir şey üretmez ve adını geçiren yükseltme maliyetleri düşer. Yolda olan bir ticaret o malı taşıyorsa silme reddedilir; aksi hâlde iade artık var olmayan bir sütuna yazmaya çalışır ve yük kaybolur. SQLite 3.35'ten eskiyse sütun düşürülemez; tür yine oyundan çıkar ve panel sütunun kaldığını söyler.
+
+### Sıfırdan başlamak
+
+**🔥 Varlık kataloğunu fabrika ayarlarına döndür** *(yalnızca sahip)* her özel türü yok eder ve her yerleşik türü — ad, başlangıç miktarı, sıra, üretim ve yükseltme maliyeti — tam olarak oyunun çıktığı hâline döndürür, ardından işlem kaydını temizler. Ülkeler ellerindeki varlıkları korur: sıfırlanan şey oyunun şeklidir, kimsenin sahip olduğu şeyler değil. Yolda olan bir ticaret özel türlerden birini taşıyorsa, hiçbir şeye dokunulmadan tüm işlem reddedilir.
 
 ### Bunun düzelttiği bir hata
 
@@ -270,7 +289,9 @@ Telegram-Strategic-GameBot/
 ├── asset_catalog.py  # Kaynaklar, birimler ve binalar veri olarak: başlangıç, maliyet, üretim
 ├── asset_admin.py    # Katalog türlerini eklemek ve ayarlamak için panel ekranları
 ├── asset_ui.py       # Oyuncu ekranları: varlıklar, yükseltme, haftalık üretim, varlık düzenleyici
-├── trade_system.py   # Üç botun paylaştığı dünya ticareti motoru (dünya haritası, rotalama, geçiş ücretleri, canlı takip)
+├── trade_system.py   # Üç botun paylaştığı dünya ticareti motoru (rotalama, geçiş ücretleri, canlı takip)
+├── trade_map.py      # Veri olarak dünya haritası: yerler, yollar, adları ve süreleri
+├── trade_map_admin.py# Haritayı düzenlemek için panel ekranları
 ├── tests/            # Çevrimdışı test paketi (sahte bot + bellek içi SQLite)
 ├── LICENSE           # MIT Lisansı
 ├── SECURITY.md       # Güvenlik politikası

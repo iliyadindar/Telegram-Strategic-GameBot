@@ -84,6 +84,7 @@ Lords trade resources with each other across two world-map graphs, entirely thro
 - **Live tracking** — a background ticker moves convoys in real time and edits the tracking message at every waypoint ("the shipment passed the Suez Canal — toll paid"), announcing departures and arrivals to the game channel.
 - **Chokepoint ownership** 🪙 — the admin can grant a group ownership of any strait, canal or pass: passage tolls are then paid into that group's treasury, and its own convoys pass free. Tolls on unowned chokepoints are burned.
 - **Admin tuning** — each group's sea/land home location plus every speed, fee, toll and capacity value is editable in-game from the trade admin panel.
+- **An editable map** 🗺 — the world itself is data, not code. From 🗺 *Edit the trade map* an admin can rename any sea, strait or region in all three languages, change what kind of place it is, decide whether countries may be based there, price its toll, and draw entirely new places and routes. Each route carries a **length** (which sets the fee and which route counts as cheapest) and an optional **exact travel time**, so a leg can be retimed without moving any prices. Deleting a place or a route is owner-only and is refused while a convoy still needs it.
 - **Trade photo** 🖼 — an admin can attach a photo to trade messages; the offer card, the live tracking message and the channel announcements are then sent as photos with captions. Bodies longer than Telegram's 1024-character caption limit fall back to plain text automatically.
 
 ---
@@ -98,13 +99,14 @@ Send `/admin` in a group **or** in the bot's private chat to open the dashboard.
 | 💰 **Economy** | World totals per resource plus the richest group; drills down to a per-group card |
 | ⚔️ **Military** | World totals per unit type plus the strongest army; drills down to a per-group card |
 | ⚙️ **Enable/disable sections** | One switch per feature — assets, upgrade, statement, private message, treaty, campaign, trade, weekly update, lord registration. A disabled section vanishes from the `/start` menu **and** its callbacks are refused, so an old open menu cannot be used to get around it |
-| 🧾 **Action log** | Every admin change — who, what, when — newest first, 10 per page |
+| 🧾 **Action log** | Every admin change — who, what, when — newest first, 10 per page. *(owner only)* 🧹 **Clear the log** empties it behind a confirmation; the wipe leaves no entry of its own, and every admin is messaged instead |
 | 👑 **Admins** | *(owner only)* Promote extra admins by forwarding one of their messages or sending their numeric id, and demote them again. The owner from the configuration is always an admin and cannot be removed |
 | 🧩 **Assets & units** | Add, rename, retune or remove resource, unit and building types — see [Asset Catalog](#-asset-catalog) |
 | ♻️ **Reset a country** | Return one group's resources, troops and buildings to their starting values, behind a confirmation step. Treaties and trade locations are left alone, and the previous values are written to the action log |
 | 🖼 **Trade photo** | Set or clear the photo used on trade messages |
 | 🖼 **War photos** | Set or clear separate photos for land and sea campaign announcements |
-| 🌍 **Trade administration** | The existing trade admin screens — home locations, chokepoint owners, trade settings |
+| 🌍 **Trade administration** | Home locations, chokepoint owners, trade settings, and 🗺 **Edit the trade map** — see [World Trade](#world-trade) |
+| 🔥 **Factory-reset the catalog** | *(owner only)* Restore every asset type to the values the game shipped with and clear the action log — see [Asset Catalog](#-asset-catalog) |
 | 🎮 **Game menu** | Opens the normal player menu without leaving the panel |
 
 ### Appointing lords
@@ -140,11 +142,28 @@ Archers now appear in the assets screen, the upgrade menu, the weekly production
 | Upgrade cost | buildings | Any combination of resources; zero removes a line |
 | Tradeable | resources | Controls whether convoys can carry it |
 
-### Built-ins and removal
+### Ordering
 
-The 8 resources, 10 units and 18 buildings that shipped with the game are seeded as **built-in**. They can be renamed and retuned but not removed, because the trade system and the war flow refer to them by key.
+A new type is appended to the end of its kind, which is rarely where it belongs. **⬆️ Move up / ⬇️ Move down** on the type's screen swaps it with its neighbour, so a resource you added last can sit above money. Ordering is within a kind — resources, then units, then buildings — and the screen shows the current place ("3 of 9").
 
-Removing a custom type **hides** it: it disappears from every menu, but its database column and its numbers stay. Restoring it brings the values back. Nothing is destroyed, and no live table is rebuilt.
+### Built-ins, hiding and deletion
+
+The 8 resources, 10 units and 18 buildings that shipped with the game are seeded as **built-in**. They can be renamed, retuned and reordered but never removed, because the trade system and the war flow refer to them by key.
+
+A custom type can be taken away in two different ways:
+
+| | 🗑 **Remove from the game** | ❌ **Delete permanently** |
+|---|---|---|
+| Who | any admin | owner only |
+| Effect | disappears from every menu | catalog row, names, upgrade costs and the `users` column are all destroyed |
+| The numbers | kept — restoring brings them back | gone for good |
+| Reversible | yes | no |
+
+Deletion also clears the type out of anything that referenced it: a building that produced it now produces nothing, and upgrade costs naming it are dropped. It is refused while a trade in flight is carrying that good, because the refund would otherwise write to a column that no longer exists and the cargo would vanish. On SQLite older than 3.35 the column cannot be dropped; the type still leaves the game and the panel says the column stayed behind.
+
+### Starting over
+
+**🔥 Factory-reset the asset catalog** *(owner only)* destroys every custom type and restores every built-in — names, starting amounts, order, production and upgrade costs — to exactly what the game shipped with, then clears the action log. Countries keep the assets they currently hold: what resets is the shape of the game, not what anyone owns. If a live trade is carrying one of the custom types, the whole reset is refused before anything is touched.
 
 ### A bug this fixed
 
@@ -284,7 +303,9 @@ Telegram-Strategic-GameBot/
 ├── asset_catalog.py  # Resources, units and buildings as data: seeding, costs, production
 ├── asset_admin.py    # Panel screens for adding and retuning catalog types
 ├── asset_ui.py       # Player screens: assets, upgrades, weekly production, asset editor
-├── trade_system.py   # World trade engine shared by all three bots (map graphs, routing, tolls, live tracking)
+├── trade_system.py   # World trade engine shared by all three bots (routing, tolls, live tracking)
+├── trade_map.py      # The world map as data: places, routes, their names and timings
+├── trade_map_admin.py# Panel screens for editing the map
 ├── tests/            # Offline test suite (stub bot + in-memory SQLite)
 ├── LICENSE           # MIT License
 ├── SECURITY.md       # Security policy

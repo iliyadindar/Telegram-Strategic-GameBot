@@ -14,9 +14,11 @@ exactly the values the hardcoded version used, so existing saves are unchanged.
 Builtins can be retuned and renamed but never removed — the trade system and the
 war flow refer to them by key.
 
-Adding a type runs ALTER TABLE ... ADD COLUMN on `users`. Removing one only
-hides it: the column and its numbers stay, so nothing is destroyed and re-adding
-the same key brings the values back.
+Adding a type runs ALTER TABLE ... ADD COLUMN on `users`. There are two ways to
+take one away again. hide() is reversible: the column and its numbers stay, so
+re-adding the same key brings the values back. remove() is not: it drops the
+column and everything in it, which is why it refuses builtins and refuses any
+key a trade is currently carrying.
 """
 
 import re
@@ -34,6 +36,10 @@ KEY_RE = re.compile(r'^[a-z][a-z0-9_]{1,30}$')
 
 _conn = None
 _lock = threading.RLock()
+
+# Set by set_delete_guard(). Returns the keys no destructive edit may touch
+# because a trade in flight is carrying them.
+_delete_guard = None
 
 
 # ---------------------------------------------------------------------------
@@ -209,39 +215,45 @@ def _migrate():
         _conn.commit()
 
 
+_CATALOG_COLUMNS = ("(key, kind, position, default_value, builtin, hidden, produces, output, "
+                    "tradeable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+
+
+def _builtin_rows():
+    """The shipped catalog as insertable rows, positions stepping by 10 per kind."""
+    rows = []
+    for keys, kind, default, tradeable in (
+            (BUILTIN_RESOURCES, 'resource', RESOURCE_DEFAULT, 1),
+            (BUILTIN_UNITS, 'unit', UNIT_DEFAULT, 0)):
+        for index, key in enumerate(keys, start=1):
+            rows.append((key, kind, index * 10, default, 1, 0, '', 0, tradeable))
+    for index, (key, produces, output) in enumerate(BUILTIN_BUILDINGS, start=1):
+        rows.append((key, 'building', index * 10, BUILDING_DEFAULT, 1, 0, produces, output, 0))
+    return rows
+
+
+def _builtin_label_rows():
+    return [(key, lang, label)
+            for lang, table in BUILTIN_LABELS.items()
+            for key, label in table.items()]
+
+
+def _builtin_cost_rows():
+    return [(building, resource, amount)
+            for building, table in BUILTIN_COSTS.items()
+            for resource, amount in table.items()]
+
+
 def _seed():
     """Insert the shipped types. INSERT OR IGNORE, so admin edits are never undone."""
     with _lock:
-        rows = []
-        position = 0
-        for key in BUILTIN_RESOURCES:
-            position += 10
-            rows.append((key, 'resource', position, RESOURCE_DEFAULT, 1, 0, '', 0, 1))
-        position = 0
-        for key in BUILTIN_UNITS:
-            position += 10
-            rows.append((key, 'unit', position, UNIT_DEFAULT, 1, 0, '', 0, 0))
-        position = 0
-        for key, produces, output in BUILTIN_BUILDINGS:
-            position += 10
-            rows.append((key, 'building', position, BUILDING_DEFAULT, 1, 0, produces, output, 0))
-        _conn.executemany(
-            "INSERT OR IGNORE INTO asset_catalog "
-            "(key, kind, position, default_value, builtin, hidden, produces, output, tradeable) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
-
-        labels = [(key, lang, label)
-                  for lang, table in BUILTIN_LABELS.items()
-                  for key, label in table.items()]
-        _conn.executemany(
-            "INSERT OR IGNORE INTO asset_labels (key, lang, label) VALUES (?, ?, ?)", labels)
-
-        costs = [(building, resource, amount)
-                 for building, table in BUILTIN_COSTS.items()
-                 for resource, amount in table.items()]
+        _conn.executemany("INSERT OR IGNORE INTO asset_catalog " + _CATALOG_COLUMNS,
+                          _builtin_rows())
+        _conn.executemany("INSERT OR IGNORE INTO asset_labels (key, lang, label) VALUES (?, ?, ?)",
+                          _builtin_label_rows())
         _conn.executemany(
             "INSERT OR IGNORE INTO asset_upgrade_costs (building, resource, amount) "
-            "VALUES (?, ?, ?)", costs)
+            "VALUES (?, ?, ?)", _builtin_cost_rows())
         _conn.commit()
 
 
@@ -476,3 +488,161 @@ def _require_known(key):
     if row is None:
         raise CatalogError('unknown')
     return row
+
+
+# ---------------------------------------------------------------------------
+# Ordering
+# ---------------------------------------------------------------------------
+
+
+def _ordered(kind):
+    """Every key of one kind in display order, hidden ones included."""
+    return _q("SELECT key, position FROM asset_catalog WHERE kind=? ORDER BY position, key",
+              (kind,))
+
+
+def _renumber(kind):
+    """Rewrite one kind's positions as 10, 20, 30… keeping the current order.
+
+    Seeded positions step by 10 and add() appends at MAX+10, but nothing
+    enforces uniqueness, and a swap between two rows sharing a position would
+    be a no-op. Spacing them out first makes the swap meaningful.
+    """
+    with _lock:
+        _conn.executemany("UPDATE asset_catalog SET position=? WHERE key=?",
+                          [((i + 1) * 10, row['key']) for i, row in enumerate(_ordered(kind))])
+        _conn.commit()
+
+
+def move(key, direction):
+    """Swap a type with its neighbour of the same kind.
+
+    Returns False when it is already at that end of its kind. Ordering is
+    within a kind only — entries() always groups resource, unit, building.
+    """
+    if direction not in ('up', 'down'):
+        raise CatalogError('bad_direction')
+    kind = _require_known(key)['kind']
+    with _lock:
+        ordered = _ordered(kind)
+        if len({row['position'] for row in ordered}) != len(ordered):
+            _renumber(kind)
+            ordered = _ordered(kind)
+        index = next(i for i, row in enumerate(ordered) if row['key'] == key)
+        other = index - 1 if direction == 'up' else index + 1
+        if not 0 <= other < len(ordered):
+            return False
+        here, there = ordered[index], ordered[other]
+        _conn.execute("UPDATE asset_catalog SET position=? WHERE key=?",
+                      (there['position'], here['key']))
+        _conn.execute("UPDATE asset_catalog SET position=? WHERE key=?",
+                      (here['position'], there['key']))
+        _conn.commit()
+    return True
+
+
+def holders(key):
+    """How many groups hold a non-zero amount of this type.
+
+    What a delete confirmation screen needs in order to say how much is about
+    to be destroyed rather than asking the admin to take it on faith.
+    """
+    _require_known(key)
+    _check_key(key)
+    rows = _q(f"SELECT COUNT(DISTINCT group_id) AS n FROM users WHERE {key} != 0")
+    return rows[0]['n'] if rows else 0
+
+
+def rank(key):
+    """(place, total) of a key within its kind, 1-based, for display."""
+    kind = _require_known(key)['kind']
+    ordered = [row['key'] for row in _ordered(kind)]
+    return ordered.index(key) + 1, len(ordered)
+
+
+# ---------------------------------------------------------------------------
+# Destroying a type
+# ---------------------------------------------------------------------------
+
+
+def set_delete_guard(fn):
+    """Register what decides a key is too busy to destroy.
+
+    `fn` returns an iterable of keys some trade in flight is carrying. Dropping
+    such a column would make that trade's refund raise on a column that no
+    longer exists, and the cargo would be gone. main*.py wires this to
+    trade_system after both modules are up; unwired, nothing is ever busy.
+    """
+    global _delete_guard
+    _delete_guard = fn
+
+
+def keys_in_transit():
+    """Keys no destructive edit may touch right now."""
+    if _delete_guard is None:
+        return frozenset()
+    try:
+        return frozenset(_delete_guard())
+    except Exception:
+        # A guard that cannot answer is not permission to proceed.
+        raise CatalogError('guard_unavailable')
+
+
+def remove(key):
+    """Destroy a custom type: its row, labels, costs, and its `users` column.
+
+    Returns True when the column went too, False when the database is too old
+    for ALTER TABLE ... DROP COLUMN (SQLite < 3.35). In that case the type is
+    still gone from the game and only an orphaned column survives, so the
+    caller can say so rather than reporting a clean delete.
+    """
+    row = _require_known(key)
+    if row['builtin']:
+        raise CatalogError('builtin')
+    if key in keys_in_transit():
+        raise CatalogError('in_transit')
+    _check_key(key)
+    with _lock:
+        # Buildings that produced it now produce nothing, rather than pointing
+        # at a key production() would silently drop anyway.
+        _conn.execute("UPDATE asset_catalog SET produces='', output=0 WHERE produces=?", (key,))
+        _conn.execute("DELETE FROM asset_upgrade_costs WHERE building=? OR resource=?", (key, key))
+        _conn.execute("DELETE FROM asset_labels WHERE key=?", (key,))
+        _conn.execute("DELETE FROM asset_catalog WHERE key=?", (key,))
+        dropped = True
+        try:
+            _conn.execute(f"ALTER TABLE users DROP COLUMN {key}")
+        except sqlite3.OperationalError:
+            dropped = False
+        _conn.commit()
+    return dropped
+
+
+def factory_reset():
+    """Restore the shipped catalog. Group balances are deliberately untouched.
+
+    Every custom type is destroyed and every builtin is retuned to the values
+    in BUILTIN_*. What resets is the shape of the game, not what anyone owns.
+
+    Returns the (removed, kept_columns) key lists, where kept_columns names the
+    types whose column outlived them on an old SQLite.
+    """
+    custom = [row['key'] for row in
+              _q("SELECT key FROM asset_catalog WHERE builtin=0 ORDER BY key")]
+    if set(custom) & keys_in_transit():
+        raise CatalogError('in_transit')
+    removed, kept = [], []
+    for key in custom:
+        if not remove(key):
+            kept.append(key)
+        removed.append(key)
+    with _lock:
+        _conn.executemany("INSERT OR REPLACE INTO asset_catalog " + _CATALOG_COLUMNS,
+                          _builtin_rows())
+        _conn.executemany("INSERT OR REPLACE INTO asset_labels (key, lang, label) "
+                          "VALUES (?, ?, ?)", _builtin_label_rows())
+        _conn.execute("DELETE FROM asset_upgrade_costs")
+        _conn.executemany("INSERT INTO asset_upgrade_costs (building, resource, amount) "
+                          "VALUES (?, ?, ?)", _builtin_cost_rows())
+        _conn.commit()
+    return removed, kept
