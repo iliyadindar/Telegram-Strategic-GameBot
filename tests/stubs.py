@@ -71,6 +71,7 @@ class StubBot:
 
     def reply_to(self, message, text, **kwargs):
         self.replies.append((message, text))
+        self._record_markup(kwargs)
 
     def edit_message_text(self, text, chat_id, message_id, **kwargs):
         self.edits.append((chat_id, message_id, text))

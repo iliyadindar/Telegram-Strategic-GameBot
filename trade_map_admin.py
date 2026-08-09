@@ -36,7 +36,7 @@ PAGE_SIZE = 8
 OPS = frozenset({
     'map', 'mn', 'mnd', 'mrn', 'mkd', 'mks', 'mhm', 'mtl', 'mdn', 'mdnc',
     'me', 'med', 'meu', 'mem', 'mde', 'mdec',
-    'man', 'mank', 'manh', 'mae', 'mae1', 'mae2',
+    'man', 'mank', 'manh', 'mae', 'maep', 'mae1', 'mae1p', 'mae2',
 })
 
 # in-progress "add a node" wizards, keyed by user id
@@ -132,8 +132,12 @@ def handle(call, parts):
         _add_node_home(call, parts[2])
     elif op == 'mae':
         _add_edge_first(call, parts[2])
+    elif op == 'maep':
+        _add_edge_first(call, parts[2], int(parts[3]))
     elif op == 'mae1':
         _add_edge_second(call, parts[2], parts[3])
+    elif op == 'mae1p':
+        _add_edge_second(call, parts[2], parts[3], int(parts[4]))
     elif op == 'mae2':
         _add_edge_units(call, parts[2], parts[3], parts[4])
     else:
@@ -291,7 +295,8 @@ def _ask_rename(call, nid):
         return
     _answer(call)
     _collect_names(call.message, call.from_user.id, {},
-                   lambda names: _apply_rename(call, nid, names))
+                   lambda names: _apply_rename(call, nid, names),
+                   current=trade_map.labels(nid))
 
 
 def _apply_rename(call, nid, names):
@@ -301,18 +306,30 @@ def _apply_rename(call, nid, names):
     _node_screen(call, nid)
 
 
-def _collect_names(message, user_id, store, done):
-    """Ask for a display name in each language, then hand the map to `done`."""
+def _collect_names(message, user_id, store, done, current=None):
+    """Ask for a display name in each language, then hand the map to `done`.
+
+    An empty reply keeps the name the node already has, and re-asks when it has
+    none — a rename must never be able to leave a place worse named than it was.
+    """
     remaining = [lang for lang in trade_map.LANGS if lang not in store]
     if not remaining:
         done(dict(store))
         return
     lang = remaining[0]
-    _bot.send_message(message.chat.id, _t('map_ask_name', lang=_t('map_lang_' + lang)))
+    kept = (current or {}).get(lang, '')
+    _bot.send_message(message.chat.id,
+                      _t('map_ask_name_keep', lang=_t('map_lang_' + lang), current=_esc(kept))
+                      if kept else _t('map_ask_name', lang=_t('map_lang_' + lang)))
 
     def on_text(msg):
-        store[lang] = (msg.text or '').strip() or lang
-        _collect_names(msg, user_id, store, done)
+        text = (msg.text or '').strip() or kept
+        if not text:
+            _bot.send_message(msg.chat.id, _t('map_name_required'))
+            _next_step(msg, user_id, on_text)
+            return
+        store[lang] = text
+        _collect_names(msg, user_id, store, done, current)
 
     _next_step(message, user_id, on_text)
 
@@ -563,26 +580,37 @@ def _add_node_home(call, flag):
 # ---------------------------------------------------------------------------
 
 
-def _add_edge_first(call, mode):
+def _add_edge_first(call, mode, page=0):
     if not _require_admin(call):
         return
     if mode not in trade_map.MODES:
         _answer(call, _t('map_err_bad_mode'), alert=True)
         return
-    _pick_node(call, mode, _t('map_pick_first'), lambda nid: f'trd:mae1:{mode}:{nid}')
+    _pick_node(call, mode, _t('map_pick_first'), lambda nid: f'trd:mae1:{mode}:{nid}',
+               page, f'trd:maep:{mode}:')
 
 
-def _add_edge_second(call, mode, a):
+def _add_edge_second(call, mode, a, page=0):
     if not _require_admin(call):
         return
     _pick_node(call, mode, _t('map_pick_second', a=_name(a)),
-               lambda nid: f'trd:mae2:{mode}:{a}:{nid}', skip=a)
+               lambda nid: f'trd:mae2:{mode}:{a}:{nid}', page, f'trd:mae1p:{mode}:{a}:', skip=a)
 
 
-def _pick_node(call, mode, prompt, target, skip=None):
+def _pick_node(call, mode, prompt, target, page, nav_prefix, skip=None):
+    """One page of places as buttons.
+
+    Paged like every other list here: an admin can add places without limit,
+    and one button per node eventually outgrows what Telegram will send.
+    """
+    nids = [nid for nid in trade_map.nodes(mode) if nid != skip]
+    window, page, pages = _page(nids, page)
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(*[types.InlineKeyboardButton(_name(nid), callback_data=target(nid))
-                 for nid in trade_map.nodes(mode) if nid != skip])
+                 for nid in window])
+    if pages > 1:
+        _nav(markup, page, pages, nav_prefix)
+        prompt += '\n' + _t('map_page', p=page + 1, n=pages)
     _send(call.message.chat.id, prompt, markup)
     _answer(call)
 
@@ -677,6 +705,9 @@ STRINGS = {
         'map_ask_home': "آیا کشورها می‌توانند اینجا مستقر شوند؟",
         'map_ask_id': "شناسه انگلیسی جای جدید را بفرستید (حروف کوچک، مثل azov):",
         'map_ask_name': "نام نمایشی به {lang} را بفرستید:",
+        'map_ask_name_keep': "نام نمایشی به {lang} را بفرستید (فعلی: {current} — برای نگه داشتن همان، خط تیره یا هر چیزی نفرستید و «-» بزنید):",
+        'map_name_required': "نام نمی‌تواند خالی باشد. یک نام بفرستید.",
+        'map_page': "(صفحه {p} از {n})",
         'map_ask_toll': "عوارض عبور از {name} چقدر باشد؟ (فعلی: {val}، صفر یعنی رایگان)",
         'map_ask_units': "طول این مسیر چند واحد باشد؟ (هزینه از روی همین حساب می‌شود)",
         'map_ask_minutes': "زمان سفر این مسیر چند دقیقه باشد؟ (صفر یعنی خودکار از روی طول)",
@@ -766,6 +797,9 @@ STRINGS = {
         'map_ask_home': "Can countries be based here?",
         'map_ask_id': "Send the new place's id (lowercase letters, e.g. azov):",
         'map_ask_name': "Send its display name in {lang}:",
+        'map_ask_name_keep': "Send its display name in {lang} (currently “{current}” — send it again to keep it):",
+        'map_name_required': "A name cannot be empty. Please send one.",
+        'map_page': "(page {p} of {n})",
         'map_ask_toll': "What should passing {name} cost? (currently {val}, 0 means free)",
         'map_ask_units': "How long is this route, in units? (the fee is worked out from this)",
         'map_ask_minutes': "How many minutes should this route take? (0 derives it from length)",
@@ -858,6 +892,9 @@ STRINGS = {
         'map_ask_home': "Ülkeler burada konuşlanabilir mi?",
         'map_ask_id': "Yeni yerin kimliğini gönderin (küçük harfler, örn. azov):",
         'map_ask_name': "{lang} dilindeki görünen adını gönderin:",
+        'map_ask_name_keep': "{lang} dilindeki görünen adını gönderin (şu an “{current}” — aynı kalması için onu tekrar gönderin):",
+        'map_name_required': "Ad boş olamaz. Lütfen bir ad gönderin.",
+        'map_page': "({p}/{n}. sayfa)",
         'map_ask_toll': "{name} geçişi ne kadar olsun? (şu an {val}, 0 ücretsiz demektir)",
         'map_ask_units': "Bu yol kaç birim uzunlukta? (ücret bundan hesaplanır)",
         'map_ask_minutes': "Bu yol kaç dakika sürsün? (0 uzunluktan hesaplar)",

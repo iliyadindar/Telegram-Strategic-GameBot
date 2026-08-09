@@ -113,6 +113,8 @@ Send `/admin` in a group **or** in the bot's private chat to open the dashboard.
 
 Players can no longer register themselves. An admin **replies to the player's message** in the group and sends `/setlord`; the bot verifies the sender is an admin and registers the replied-to user as that group's lord.
 
+`/unsetlord` takes a lordship back. In reply to a player it removes that player; sent on its own in a group it offers to retire the whole group. There is no separate registration record — the row *is* the country — so either form deletes the resources, army and buildings that went with it. Removing one player is admin-level; retiring a group is **owner only** and asks for a button press first. Both refuse while that country still has a trade in flight, because a refund or delivery written to a deleted row is silently lost.
+
 ### Campaigns and the war channel
 
 Public campaign announcements go to the **war channel** (`WAR_CHANNEL_ID`) and carry only the commander, origin, destination and arrival time. The full report, including the army details the player typed, is sent privately to the owner and every admin.
@@ -253,6 +255,7 @@ BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-en.py
 | Command | Description |
 |---|---|
 | `/setlord` | **Admin only.** Reply to a player's message with this to make them the lord of that group |
+| `/unsetlord` | **Admin only.** Reply to a lord's message to remove them. Sent with no reply it offers to retire the whole group — *owner only*. Either way the country's assets go with it |
 | `/start` | Open the main menu and start playing — in a group or in private chat |
 | `/admin` | Open the admin dashboard — works in a group or in private chat *(admin only)* |
 | `panel` / `menu` | The bare word does exactly what `/start` does — no slash needed |

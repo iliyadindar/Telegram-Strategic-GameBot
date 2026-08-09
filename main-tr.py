@@ -84,6 +84,10 @@ trade_system.init(bot, conn, ADMIN_ID, CHANNEL_ID, lang='tr',
 # system what is in flight before it drops anything.
 asset_catalog.set_delete_guard(trade_system.active_goods_keys)
 
+# /unsetlord deletes a country's `users` row. A live trade still owes that row a
+# refund or a delivery, so the panel asks the trade system before removing it.
+admin_panel.set_lord_guard(trade_system.active_trade_groups)
+
 # Player-facing asset, upgrade and weekly-production screens. Every entry
 # comes from the asset catalog, so admin-added types work with no code change.
 asset_ui.init(bot, conn, lang='tr', audit=admin_panel.log,
@@ -113,6 +117,13 @@ attack_type_labels = {
 def set_lord(message):
     # A lord is appointed by an admin replying to that player's message.
     admin_panel.handle_setlord(message)
+
+
+@bot.message_handler(commands=['unsetlord'])
+def unset_lord(message):
+    # In reply: that player loses the lordship. On its own: the whole group,
+    # owner only, behind a confirmation button.
+    admin_panel.handle_unsetlord(message)
 
 
 @bot.message_handler(commands=['admin'])

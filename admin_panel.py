@@ -5,6 +5,7 @@ main*.py calls init() once, then:
 
     * routes /admin            -> open_panel(chat_id, user_id)
     * routes /setlord          -> handle_setlord(message)
+    * routes /unsetlord        -> handle_unsetlord(message)
     * routes 'ap:' callbacks   -> handle_callback(call)
     * guards every feature     -> feature_enabled() / require_feature()
     * records admin mutations  -> log()
@@ -41,6 +42,7 @@ _game_menu = None          # callback into main*.py that renders the /start menu
 _lock = threading.RLock()
 _title_cache = {}
 _name_cache = {}
+_lord_guard = None         # set by main*.py; says which groups have a live trade
 
 PAGE_SIZE = 8
 LOG_PAGE_SIZE = 10
@@ -415,6 +417,8 @@ def handle_callback(call):
             _reset_confirm(call, int(parts[2]))
         elif op == 'rsc':
             _reset_apply(call, int(parts[2]))
+        elif op == 'ulc':
+            _unset_group_apply(call, int(parts[2]))
         elif op == 'lgc':
             _log_clear_confirm(call)
         elif op == 'lgcc':
@@ -916,7 +920,69 @@ def _war_photo_clear(call, mode):
 
 # ---------------------------------------------------------------------------
 # Lord assignment — an admin replies to the player's message with /setlord
+#
+# There is no registration table: the `users` row *is* the country, assets and
+# home nodes included. So taking a lordship back destroys those numbers, which
+# is why /unsetlord below guards, confirms and logs rather than just deleting.
 # ---------------------------------------------------------------------------
+
+
+class LordError(ValueError):
+    """Raised when a lordship cannot be taken back right now."""
+
+
+def set_lord_guard(fn):
+    """Register what decides a group is too busy to lose its lord.
+
+    `fn` returns the group ids that still have a trade in flight. Their refunds
+    and deliveries are `UPDATE users ... WHERE group_id=?`: against a deleted
+    row that writes nothing and reports nothing, so the escrowed fee and the
+    cargo are simply lost. With no guard registered nothing is in flight.
+    """
+    global _lord_guard
+    _lord_guard = fn
+
+
+def _groups_in_trade():
+    if _lord_guard is None:
+        return frozenset()
+    try:
+        return frozenset(_lord_guard())
+    except Exception:
+        raise LordError('guard_unavailable')
+
+
+def _lord_err(exc):
+    return STRINGS[_lang].get('unsetlord_err_' + str(exc), _t('err_generic'))
+
+
+def _drop_lords(group_id, user_id=None):
+    """Delete a group's lord row(s) and return the user ids that went.
+
+    The single path by which a country dies. `user_id` narrows it to one
+    player; without it the whole group goes. Raises LordError rather than
+    deleting anything when the group has a trade in flight.
+    """
+    where, params = "group_id=?", (group_id,)
+    if user_id is not None:
+        where, params = "group_id=? AND user_id=?", (group_id, user_id)
+    rows = _q(f"SELECT user_id FROM users WHERE {where}", params)
+    if not rows:
+        raise LordError('not_lord' if user_id is not None else 'no_lords')
+    if group_id in _groups_in_trade():
+        raise LordError('in_trade')
+    with _lock:
+        _conn.execute(f"DELETE FROM users WHERE {where}", params)
+        # A chokepoint whose owner no longer exists would keep charging tolls
+        # on behalf of a country that is gone — but only the last lord leaving
+        # ends the country, so a co-lord's removal leaves ownership alone.
+        if not _conn.execute("SELECT 1 FROM users WHERE group_id=?", (group_id,)).fetchone():
+            try:
+                _conn.execute("DELETE FROM chokepoint_owners WHERE group_id=?", (group_id,))
+            except sqlite3.OperationalError:
+                pass  # trade_system's table; absent when the panel runs alone
+        _conn.commit()
+    return [row['user_id'] for row in rows]
 
 
 def handle_setlord(message):
@@ -946,3 +1012,69 @@ def handle_setlord(message):
     _exec("INSERT OR IGNORE INTO users (user_id, group_id) VALUES (?, ?)", (target.id, group_id))
     log(message.from_user.id, 'lord_assign', _title(group_id), str(target.id))
     _bot.reply_to(message, _t('setlord_done', u=_user_link(target.id)), parse_mode='HTML')
+
+
+def handle_unsetlord(message):
+    """Take a lordship back. In reply: that player. On its own: the group.
+
+    Removing one player is admin-level, the mirror of /setlord. Retiring a
+    whole group deletes every country row it has, so it is owner-only and
+    goes through a confirmation button.
+    """
+    if message.chat.type not in ('group', 'supergroup'):
+        _bot.reply_to(message, _t('setlord_group_only'))
+        return
+    if not feature_enabled('setlord'):
+        _bot.reply_to(message, _t('feature_disabled'))
+        return
+    if not is_admin(message.from_user.id):
+        _bot.reply_to(message, _t('unsetlord_not_admin'))
+        return
+    reply = getattr(message, 'reply_to_message', None)
+    if reply is None or reply.from_user is None:
+        _unset_group_ask(message)
+        return
+
+    group_id = message.chat.id
+    target = reply.from_user
+    try:
+        _drop_lords(group_id, target.id)
+    except LordError as exc:
+        _bot.reply_to(message, _lord_err(exc))
+        return
+    log(message.from_user.id, 'lord_unassign', _title(group_id), str(target.id))
+    _bot.reply_to(message, _t('unsetlord_done', u=_user_link(target.id)), parse_mode='HTML')
+
+
+def _unset_group_ask(message):
+    """/unsetlord with nothing to reply to: offer to retire the whole group."""
+    if not is_owner(message.from_user.id):
+        _bot.reply_to(message, _t('unsetlord_not_owner'))
+        return
+    group_id = message.chat.id
+    lords = _q("SELECT user_id FROM users WHERE group_id=?", (group_id,))
+    if not lords:
+        _bot.reply_to(message, _t('unsetlord_no_lords'))
+        return
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(_t('btn_unset_group'),
+                                          callback_data=f'ap:ulc:{group_id}'))
+    _bot.reply_to(message, _t('unsetlord_group_confirm', title=_esc(_title(group_id)),
+                              n=len(lords)),
+                  reply_markup=markup, parse_mode='HTML')
+
+
+def _unset_group_apply(call, gid):
+    # The guard is checked again inside _drop_lords rather than trusted from
+    # the confirm screen: a trade can be offered between the two taps.
+    if not _require_owner(call):
+        return
+    title = _title(gid)
+    try:
+        removed = _drop_lords(gid)
+    except LordError as exc:
+        _answer(call, _lord_err(exc), alert=True)
+        return
+    log(call.from_user.id, 'group_unassign', title, ', '.join(str(uid) for uid in removed))
+    _show(call, _t('unsetlord_group_done', title=_esc(title), n=len(removed)))
+    _answer(call)

@@ -884,6 +884,22 @@ def active_route_nodes():
     return nodes
 
 
+def active_trade_groups():
+    """Group ids that are either end of a live trade.
+
+    _give() and _refund() are `UPDATE users ... WHERE group_id=?`. Against a
+    deleted row that updates nothing and says nothing, so the escrowed fee and
+    the cargo are simply lost. /unsetlord asks this before it removes a country.
+    """
+    groups = set()
+    placeholders = ', '.join('?' * len(LIVE_STATUSES))
+    for row in _q(f"SELECT sender_group_id, receiver_group_id FROM trades "
+                  f"WHERE status IN ({placeholders})", LIVE_STATUSES):
+        groups.add(row['sender_group_id'])
+        groups.add(row['receiver_group_id'])
+    return groups
+
+
 # ---------------------------------------------------------------------------
 # Callback entry point
 # ---------------------------------------------------------------------------

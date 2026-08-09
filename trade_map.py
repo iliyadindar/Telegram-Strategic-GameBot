@@ -306,7 +306,24 @@ def _invalidate():
     Readers go through nodes()/edges()/adjacency(), which memoise here rather
     than in their callers, so this is the only place a stale map can hide.
     """
-    _cache.clear()
+    with _lock:
+        _cache.clear()
+
+
+def _cached(key, build):
+    """Memoise one derived lookup, holding the lock across build and store.
+
+    trade_system's ticker thread reads the map while an admin edits it. The
+    dangerous interleaving is not a torn read — it is a reader that builds a
+    value, has _invalidate() run underneath it, and then writes its now-stale
+    value into the cache, where it would stay until the next edit. Building
+    under the same lock the mutators take makes that impossible. The lock is
+    reentrant and _q() already takes it, so `build` may query freely.
+    """
+    with _lock:
+        if key not in _cache:
+            _cache[key] = build()
+        return _cache[key]
 
 
 def set_node_guard(fn):
@@ -355,19 +372,19 @@ def nodes(mode):
     """
     if mode not in MODES:
         raise MapError('bad_mode')
-    cached = _cache.get(('nodes', mode))
-    if cached is not None:
-        return cached
-    labels = {}
-    for row in _q("SELECT node_id, lang, label FROM trade_node_labels"):
-        labels.setdefault(row['node_id'], {})[row['lang']] = row['label']
-    out = {}
-    for row in _q("SELECT id, kind, home FROM trade_nodes WHERE mode=? ORDER BY position, id",
-                  (mode,)):
-        out[row['id']] = {'kind': row['kind'], 'home': bool(row['home']),
-                          'names': labels.get(row['id'], {})}
-    _cache[('nodes', mode)] = out
-    return out
+
+    def build():
+        labels = {}
+        for row in _q("SELECT node_id, lang, label FROM trade_node_labels"):
+            labels.setdefault(row['node_id'], {})[row['lang']] = row['label']
+        out = {}
+        for row in _q("SELECT id, kind, home FROM trade_nodes WHERE mode=? ORDER BY position, id",
+                      (mode,)):
+            out[row['id']] = {'kind': row['kind'], 'home': bool(row['home']),
+                              'names': labels.get(row['id'], {})}
+        return out
+
+    return _cached(('nodes', mode), build)
 
 
 def node(mode, nid):
@@ -397,13 +414,10 @@ def edges(mode):
     """[(a, b, units, minutes)] for one mode."""
     if mode not in MODES:
         raise MapError('bad_mode')
-    cached = _cache.get(('edges', mode))
-    if cached is None:
-        cached = [(row['a'], row['b'], row['units'], row['minutes'])
-                  for row in _q("SELECT a, b, units, minutes FROM trade_edges WHERE mode=? "
-                                "ORDER BY a, b", (mode,))]
-        _cache[('edges', mode)] = cached
-    return cached
+    return _cached(('edges', mode), lambda: [
+        (row['a'], row['b'], row['units'], row['minutes'])
+        for row in _q("SELECT a, b, units, minutes FROM trade_edges WHERE mode=? "
+                      "ORDER BY a, b", (mode,))])
 
 
 def edge(mode, a, b):
@@ -421,25 +435,22 @@ def edges_of(nid):
 
 def adjacency(mode):
     """{node id: [(neighbour, units)]}, every node present even with no edges."""
-    cached = _cache.get(('adj', mode))
-    if cached is None:
-        cached = {nid: [] for nid in nodes(mode)}
+    def build():
+        out = {nid: [] for nid in nodes(mode)}
         for a, b, units, _minutes in edges(mode):
-            if a in cached and b in cached:
-                cached[a].append((b, units))
-                cached[b].append((a, units))
-        _cache[('adj', mode)] = cached
-    return cached
+            if a in out and b in out:
+                out[a].append((b, units))
+                out[b].append((a, units))
+        return out
+
+    return _cached(('adj', mode), build)
 
 
 def leg(mode, a, b):
     """(units, minutes) for one leg, or None when the two are not connected."""
-    cached = _cache.get(('legs', mode))
-    if cached is None:
-        cached = {frozenset((x, y)): (units, minutes)
-                  for x, y, units, minutes in edges(mode)}
-        _cache[('legs', mode)] = cached
-    return cached.get(frozenset((a, b)))
+    legs = _cached(('legs', mode), lambda: {frozenset((x, y)): (units, minutes)
+                                            for x, y, units, minutes in edges(mode)})
+    return legs.get(frozenset((a, b)))
 
 
 def leg_minutes(mode, a, b, per_unit):

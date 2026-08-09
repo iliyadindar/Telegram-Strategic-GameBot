@@ -3,6 +3,7 @@
 
 import os
 import sys
+import threading
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -362,6 +363,52 @@ class LiveTradeGuardTest(unittest.TestCase):
         self.insert_trade('active', '["med","sue"]', '{"gold": 50}')
         with self.assertRaises(trade_map.MapError):
             trade_map.remove_node('sue')
+
+    def test_a_live_trade_names_both_of_its_groups(self):
+        self.insert_trade('active', '["med","sue"]', '{"gold": 50}')
+        self.assertEqual(trade_system.active_trade_groups(), {1, 2})
+
+    def test_a_finished_trade_frees_its_groups(self):
+        self.insert_trade('delivered', '["med","sue"]', '{"gold": 50}')
+        self.assertEqual(trade_system.active_trade_groups(), set())
+
+    def test_an_offered_trade_still_holds_its_groups(self):
+        self.insert_trade('offered', '["med","sue"]', '{"gold": 50}')
+        self.assertEqual(trade_system.active_trade_groups(), {1, 2})
+
+
+class CacheLockTest(MapTestCase):
+    """The ticker thread reads the map while an admin edits it."""
+
+    def test_an_edit_during_a_read_is_not_overwritten_by_the_stale_value(self):
+        # Without the lock the mutator clears the cache mid-build and the
+        # reader then stores its now-stale value, where it would stay until
+        # the next edit. Holding the lock across build-and-store forbids that.
+        building = threading.Event()
+        mutated = threading.Event()
+
+        def build():
+            building.set()
+            mutated.wait(0.3)
+            return 'stale'
+
+        def mutate():
+            building.wait(1.0)
+            trade_map._invalidate()
+            mutated.set()
+
+        thread = threading.Thread(target=mutate)
+        thread.start()
+        trade_map._cached(('probe',), build)
+        thread.join(2.0)
+        self.assertNotIn(('probe',), trade_map._cache)
+
+    def test_an_edit_made_on_another_thread_reaches_the_next_read(self):
+        self.assertTrue(trade_map.nodes('sea')['med']['home'])   # warm the cache
+        thread = threading.Thread(target=lambda: trade_map.set_home('med', False))
+        thread.start()
+        thread.join(2.0)
+        self.assertFalse(trade_map.nodes('sea')['med']['home'])
 
 
 if __name__ == '__main__':

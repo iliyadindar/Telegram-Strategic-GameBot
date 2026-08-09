@@ -109,6 +109,7 @@ class EntrypointTest(unittest.TestCase):
                         commands.update(kwargs.get('commands', []))
                 self.assertIn('admin', commands)
                 self.assertIn('setlord', commands)
+                self.assertIn('unsetlord', commands)
                 self.assertIn('start', commands)
 
     def test_menu_covers_the_same_features_in_every_language(self):
@@ -126,6 +127,15 @@ class EntrypointTest(unittest.TestCase):
                 module, bot = self.load(filename)
                 module.send_main_menu(-1, 55)
                 self.assertIn('/setlord', bot.last_sent_text())
+
+    def test_unsetlord_is_wired_to_the_live_trade_guard(self):
+        # Deleting a country's row mid-trade loses the escrowed cargo silently,
+        # so the panel must know what is in flight before /unsetlord can fire.
+        for filename in ENTRYPOINTS:
+            with self.subTest(filename):
+                module, _ = self.load(filename)
+                self.assertIs(module.admin_panel._lord_guard,
+                              module.trade_system.active_trade_groups)
 
     def test_trade_admin_ops_are_declared_identically(self):
         ops = {f: set(self.load(f)[0].TRADE_ADMIN_OPS) for f in ENTRYPOINTS}

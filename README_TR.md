@@ -112,6 +112,8 @@ Paneli açmak için bir grupta **veya** botun özel sohbetinde `/admin` gönderi
 
 Oyuncular artık kendilerini kaydedemez. Bir yönetici grupta **oyuncunun mesajını yanıtlar** ve `/setlord` gönderir; bot gönderenin yönetici olduğunu doğrular ve yanıtlanan kullanıcıyı o grubun lordu olarak kaydeder.
 
+`/unsetlord` bir lordluğu geri alır. Bir oyuncunun mesajına yanıt olarak gönderildiğinde o oyuncuyu kaldırır; grupta tek başına gönderildiğinde grubun tümünü emekliye ayırmayı önerir. Ayrı bir kayıt tablosu yoktur — satırın kendisi *ülkedir* — bu yüzden her iki biçim de kaynakları, orduyu ve binaları birlikte siler. Tek kişiyi kaldırmak yönetici düzeyindedir; grubu emekliye ayırmak **yalnızca sahibe** özeldir ve önce bir onay düğmesi ister. O ülkenin yolda bir sevkiyatı varsa ikisi de reddedilir: silinmiş bir satıra yazılan iade veya teslimat sessizce kaybolur.
+
 ### Seferler ve savaş kanalı
 
 Genel sefer duyuruları **savaş kanalına** (`WAR_CHANNEL_ID`) gider ve yalnızca komutanı, çıkış noktasını, hedefi ve varış zamanını içerir. Oyuncunun yazdığı ordu bilgileri dahil tam rapor, sahibe ve tüm yöneticilere özel olarak gönderilir.
@@ -238,6 +240,7 @@ BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-tr.py
 | Komut | Açıklama |
 |---|---|
 | `/setlord` | **Yalnızca yönetici.** Bir oyuncunun mesajını yanıtlayarak onu o grubun lordu yapın |
+| `/unsetlord` | **Yalnızca yönetici.** Bir lordun mesajını yanıtlayarak onu kaldırın. Yanıtsız gönderildiğinde grubu tümüyle emekliye ayırmayı önerir — *yalnızca sahip*. Her iki durumda da ülkenin varlıkları gider |
 | `/start` | Ana menüyü açın ve oynamaya başlayın — grupta veya özel sohbette |
 | `/admin` | Yönetim panelini açın — grupta veya özel sohbette *(yalnızca yönetici)* |
 | `panel` / `menü` | Tek başına bu kelime tam olarak `/start` ile aynı işi yapar, eğik çizgiye gerek yok |

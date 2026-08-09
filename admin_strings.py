@@ -17,6 +17,7 @@ FEATURES = ('assets', 'upgrade', 'statement', 'private_message', 'treaty',
 
 # Actions written to admin_log; label lives under 'act_<name>' in STRINGS.
 ACTIONS = ('asset_edit', 'feature_toggle', 'weekly_update', 'reset_country', 'lord_assign',
+           'lord_unassign', 'group_unassign',
            'admin_add', 'admin_remove', 'trade_photo', 'war_photo',
            'trade_config', 'chokepoint_owner', 'group_home',
            'asset_add', 'asset_type_edit', 'asset_hide', 'asset_cost')
@@ -90,6 +91,8 @@ STRINGS = {
         'act_weekly_update': "آپ هفتگی",
         'act_reset_country': "بازنشانی دارایی کشور",
         'act_lord_assign': "تعیین لرد",
+        'act_lord_unassign': "برکناری لرد",
+        'act_group_unassign': "بازنشستگی گروه",
         'act_admin_add': "افزودن ادمین",
         'act_admin_remove': "حذف ادمین",
         'act_trade_photo': "عکس تجارت",
@@ -130,6 +133,21 @@ STRINGS = {
         'setlord_bot_target': "نمی‌توان یک ربات را به عنوان لرد ثبت کرد.",
         'setlord_done': "👤 {u} به عنوان لرد این گروه ثبت شد.",
         'setlord_already': "👤 {u} از قبل لرد این گروه است.",
+        'unsetlord_not_admin': "فقط ادمین ربات می‌تواند لردی را پس بگیرد.",
+        'unsetlord_not_owner': "برای بازنشسته کردن کل گروه باید مالک ربات باشید.",
+        'unsetlord_no_lords': "این گروه اصلاً لردی ندارد.",
+        'unsetlord_done': "🚫 لردی {u} پس گرفته شد و دارایی‌های کشورش پاک شد.",
+        'btn_unset_group': "🔥 بله، این گروه بازنشسته شود",
+        'unsetlord_group_confirm': "🔥 <b>بازنشستگی «{title}»</b>\n<blockquote>{n} لرد این گروه "
+                                   "و تمام دارایی‌ها، ارتش و ساختمان‌هایشان برای همیشه حذف "
+                                   "می‌شوند.\n\n⚠️ برای برکناری فقط یک نفر، روی پیام او ریپلای "
+                                   "کنید و /unsetlord بزنید.</blockquote>",
+        'unsetlord_group_done': "🔥 «{title}» بازنشسته شد؛ {n} لرد حذف شدند.",
+        'unsetlord_err_not_lord': "این کاربر لرد این گروه نیست.",
+        'unsetlord_err_no_lords': "این گروه اصلاً لردی ندارد.",
+        'unsetlord_err_in_trade': "همین حالا محموله‌ای در راه این کشور است. تا رسیدن آن "
+                                  "نمی‌توان لردش را برداشت.",
+        'unsetlord_err_guard_unavailable': "وضعیت محموله‌های در راه مشخص نشد، پس چیزی حذف نشد.",
         'act_asset_add': "افزودن نوع دارایی",
         'act_asset_type_edit': "ویرایش نوع دارایی",
         'act_asset_hide': "حذف نوع دارایی",
@@ -308,6 +326,8 @@ STRINGS = {
         'act_weekly_update': "weekly update",
         'act_reset_country': "country reset",
         'act_lord_assign': "lord assigned",
+        'act_lord_unassign': "lord removed",
+        'act_group_unassign': "group retired",
         'act_admin_add': "admin added",
         'act_admin_remove': "admin removed",
         'act_trade_photo': "trade photo",
@@ -348,6 +368,22 @@ STRINGS = {
         'setlord_bot_target': "A bot cannot be registered as a lord.",
         'setlord_done': "👤 {u} has been registered as the lord of this group.",
         'setlord_already': "👤 {u} is already the lord of this group.",
+        'unsetlord_not_admin': "Only a bot admin can take a lordship back.",
+        'unsetlord_not_owner': "Retiring a whole group is for the bot owner only.",
+        'unsetlord_no_lords': "This group has no lord to remove.",
+        'unsetlord_done': "🚫 {u} is no longer a lord; their country's assets are gone.",
+        'btn_unset_group': "🔥 Yes, retire this group",
+        'unsetlord_group_confirm': "🔥 <b>Retire “{title}”</b>\n<blockquote>Its {n} lord(s) and "
+                                   "every resource, unit and building they hold will be deleted "
+                                   "for good.\n\n⚠️ To remove just one person, reply to their "
+                                   "message with /unsetlord instead.</blockquote>",
+        'unsetlord_group_done': "🔥 “{title}” has been retired; {n} lord(s) removed.",
+        'unsetlord_err_not_lord': "That user is not a lord of this group.",
+        'unsetlord_err_no_lords': "This group has no lord to remove.",
+        'unsetlord_err_in_trade': "A shipment is on its way to this country right now. Its lord "
+                                  "cannot be removed until that trade arrives.",
+        'unsetlord_err_guard_unavailable': "Could not check what is in transit, so nothing was "
+                                           "deleted.",
         'act_asset_add': "asset type added",
         'act_asset_type_edit': "asset type edited",
         'act_asset_hide': "asset type removed",
@@ -527,6 +563,8 @@ STRINGS = {
         'act_weekly_update': "haftalık güncelleme",
         'act_reset_country': "ülke sıfırlandı",
         'act_lord_assign': "lord atandı",
+        'act_lord_unassign': "lordluk geri alındı",
+        'act_group_unassign': "grup emekliye ayrıldı",
         'act_admin_add': "yönetici eklendi",
         'act_admin_remove': "yönetici çıkarıldı",
         'act_trade_photo': "ticaret fotoğrafı",
@@ -567,6 +605,23 @@ STRINGS = {
         'setlord_bot_target': "Bir bot lord olarak kaydedilemez.",
         'setlord_done': "👤 {u} bu grubun lordu olarak kaydedildi.",
         'setlord_already': "👤 {u} zaten bu grubun lordu.",
+        'unsetlord_not_admin': "Bir lordluğu yalnızca bot yöneticisi geri alabilir.",
+        'unsetlord_not_owner': "Bir grubu tümüyle emekliye ayırmak yalnızca bot sahibine özeldir.",
+        'unsetlord_no_lords': "Bu grupta kaldırılacak bir lord yok.",
+        'unsetlord_done': "🚫 {u} artık lord değil; ülkesinin varlıkları silindi.",
+        'btn_unset_group': "🔥 Evet, bu grubu emekliye ayır",
+        'unsetlord_group_confirm': "🔥 <b>“{title}” emekliye ayrılsın mı?</b>\n<blockquote>{n} "
+                                   "lordu ve sahip oldukları tüm kaynaklar, birlikler ve "
+                                   "binalar kalıcı olarak silinecek.\n\n⚠️ Yalnızca bir kişiyi "
+                                   "kaldırmak için onun mesajını yanıtlayıp /unsetlord "
+                                   "gönderin.</blockquote>",
+        'unsetlord_group_done': "🔥 “{title}” emekliye ayrıldı; {n} lord kaldırıldı.",
+        'unsetlord_err_not_lord': "Bu kullanıcı bu grubun lordu değil.",
+        'unsetlord_err_no_lords': "Bu grupta kaldırılacak bir lord yok.",
+        'unsetlord_err_in_trade': "Şu anda bu ülkeye bir sevkiyat yolda. O ticaret varana kadar "
+                                  "lordu kaldırılamaz.",
+        'unsetlord_err_guard_unavailable': "Yolda ne olduğu kontrol edilemedi, bu yüzden hiçbir "
+                                           "şey silinmedi.",
         'act_asset_add': "varlık türü eklendi",
         'act_asset_type_edit': "varlık türü düzenlendi",
         'act_asset_hide': "varlık türü kaldırıldı",

@@ -119,6 +119,26 @@ class NodeEditScreenTest(MapScreenTest):
             self.feed('Ditch')
         self.assertIn('map_node_edit', [entry[1] for entry in self.logged])
 
+    def test_a_blank_reply_keeps_the_name_the_node_already_has(self):
+        self.tap('trd:mrn:sue')
+        for _lang in trade_map.LANGS:
+            self.feed('   ')
+        self.assertEqual(trade_map.name('sue', 'en'), 'Suez Canal')
+        self.assertEqual(trade_map.name('sue', 'fa'), trade_map.SEA_NODES['sue']['names']['fa'])
+
+    def test_one_language_can_be_renamed_while_the_others_are_skipped(self):
+        self.tap('trd:mrn:sue')
+        self.feed('')            # fa — keep
+        self.feed('The Ditch')   # en
+        self.feed('')            # tr — keep
+        self.assertEqual(trade_map.name('sue', 'en'), 'The Ditch')
+        self.assertEqual(trade_map.name('sue', 'tr'), trade_map.SEA_NODES['sue']['names']['tr'])
+
+    def test_the_rename_prompt_shows_the_current_name(self):
+        self.tap('trd:mrn:sue')
+        self.feed('')
+        self.assertIn('Suez Canal', self.screen())
+
     def test_the_new_name_reaches_the_route_text(self):
         self.tap('trd:mrn:sue')
         for _lang in trade_map.LANGS:
@@ -234,6 +254,17 @@ class AddNodeTest(MapScreenTest):
         self.feed('Azov Sea!')
         self.assertIn('Invalid id', self.screen())
 
+    def test_a_blank_name_is_re_asked_when_there_is_none_to_keep(self):
+        self.tap('trd:man:sea')
+        self.feed('azo')
+        self.feed('   ')
+        self.assertIn('cannot be empty', self.screen())
+        for lang in trade_map.LANGS:
+            self.feed(f'Azov-{lang}')
+        self.tap('trd:mank:sea')
+        self.tap('trd:manh:1')
+        self.assertEqual(trade_map.name('azo', 'fa'), 'Azov-fa')
+
     def test_adding_is_logged(self):
         self.add_azov()
         self.assertIn('map_node_add', [entry[1] for entry in self.logged])
@@ -251,6 +282,32 @@ class AddEdgeTest(MapScreenTest):
     def test_the_second_picker_excludes_the_first_node(self):
         self.tap('trd:mae1:sea:med')
         self.assertNotIn('trd:mae2:sea:med:med', self.bot.last_keyboard())
+
+    def test_the_first_picker_pages_instead_of_one_huge_keyboard(self):
+        self.tap('trd:mae:sea')
+        keyboard = self.bot.last_keyboard()
+        self.assertIn('trd:maep:sea:1', keyboard)
+        self.assertLessEqual(len(keyboard), trade_map_admin.PAGE_SIZE + 2)
+
+    def test_a_later_page_of_the_first_picker_offers_later_nodes(self):
+        nids = list(trade_map.nodes('sea'))
+        self.tap('trd:maep:sea:1')
+        self.assertIn(f'trd:mae1:sea:{nids[trade_map_admin.PAGE_SIZE]}', self.bot.last_keyboard())
+        self.assertNotIn(f'trd:mae1:sea:{nids[0]}', self.bot.last_keyboard())
+
+    def test_the_second_picker_pages_too(self):
+        self.tap('trd:mae1:sea:med')
+        self.assertIn('trd:mae1p:sea:med:1', self.bot.last_keyboard())
+        self.tap('trd:mae1p:sea:med:1')
+        self.assertTrue(any(d.startswith('trd:mae2:sea:med:') for d in self.bot.last_keyboard()))
+
+    def test_a_node_reached_through_a_later_page_still_makes_an_edge(self):
+        nids = [nid for nid in trade_map.nodes('sea') if nid != 'med']
+        far = nids[trade_map_admin.PAGE_SIZE + 1]
+        self.tap('trd:mae1p:sea:med:1')
+        self.tap(f'trd:mae2:sea:med:{far}')
+        self.feed('4')
+        self.assertEqual(trade_map.leg('sea', 'med', far)[0], 4)
 
     def test_a_duplicate_edge_is_reported(self):
         self.tap('trd:mae2:sea:red:sue')

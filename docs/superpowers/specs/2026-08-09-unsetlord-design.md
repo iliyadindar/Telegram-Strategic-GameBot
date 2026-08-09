@@ -50,7 +50,7 @@ a node a convoy is sailing towards.
 trade_system.py  + active_trade_groups()      group ids with a live trade
 admin_panel.py   + handle_unsetlord(message)  /unsetlord
                  + set_lord_guard()           receives active_trade_groups
-                 + _unset_confirm/_unset_apply  ap:ul: / ap:ulc: screens
+                 + _unset_group_ask/_apply    the confirm, and the ap:ulc: tap
                  + _drop_lords()              the one place a users row dies
 admin_strings.py + fa/en/tr strings, + lord_unassign / group_unassign actions
 main*.py         + the /unsetlord handler, three entrypoints
@@ -72,8 +72,9 @@ country can die.
 /unsetlord (reply)   admin? -> feature on? -> target is a lord here? -> guard clear?
                      -> delete row -> log lord_unassign -> reply naming the ex-lord
 
-/unsetlord (alone)   owner? -> feature on? -> group has lords? -> confirm keyboard
-                     -> ap:ulc:<gid> -> owner? -> guard clear? -> delete every row
+/unsetlord (alone)   admin? -> feature on? -> owner? -> group has lords?
+                     -> confirm keyboard carrying ap:ulc:<gid>
+                     -> tap -> owner? -> guard clear? -> delete every row
                      -> log group_unassign -> report the count
 ```
 
@@ -87,10 +88,13 @@ can be offered between the two taps.
 | Not a group chat | `setlord_group_only` — reused, the command has the same constraint. |
 | Feature off | `feature_disabled`. |
 | Not admin / not owner | `unsetlord_not_admin` / `unsetlord_not_owner`. |
-| Replied-to user is not a lord here | `unsetlord_not_lord`. |
+| Replied-to user is not a lord here | `unsetlord_err_not_lord`. |
 | No lords in the group | `unsetlord_no_lords`. |
-| Live trade | `unsetlord_in_trade`, naming how many. |
-| Guard raised | `unsetlord_guard_unavailable` — nothing is deleted. |
+| Live trade | `unsetlord_err_in_trade` — wait for the shipment to arrive. |
+| Guard raised | `unsetlord_err_guard_unavailable` — nothing is deleted. |
+
+The last four are `LordError` codes raised by `_drop_lords()` and looked up as
+`unsetlord_err_<code>`, the same shape `trade_map`'s `MapError` codes already use.
 
 ## Review comments from PR #8
 

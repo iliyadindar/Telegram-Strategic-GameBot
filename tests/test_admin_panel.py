@@ -39,6 +39,9 @@ class PanelTestCase(unittest.TestCase):
         })
         admin_panel._title_cache.clear()
         admin_panel._name_cache.clear()
+        # main*.py registers this after init(); a test that sets one must not
+        # leave a live trade hanging over every case that follows.
+        admin_panel.set_lord_guard(None)
         admin_panel.init(self.bot, self.conn, OWNER, '@news', '@war', lang='en')
 
     def call(self, data, user_id=OWNER, chat_id=GROUP_A):
@@ -370,6 +373,182 @@ class SetLordTest(PanelTestCase):
         entry = admin_panel.recent_log()[0]
         self.assertEqual(entry['action'], 'lord_assign')
         self.assertEqual(entry['detail'], str(PLAYER))
+
+
+class UnsetLordTest(PanelTestCase):
+    """/unsetlord: one player in reply, the whole group on its own."""
+
+    def setUp(self):
+        super().setUp()
+        self.conn.execute("CREATE TABLE chokepoint_owners "
+                          "(node_id TEXT PRIMARY KEY, group_id INTEGER NOT NULL)")
+        self.conn.commit()
+        self.addCleanup(admin_panel.set_lord_guard, None)
+        add_group(self.conn, PLAYER, GROUP_A)
+
+    def promote_helper(self):
+        admin_panel._admin_add_apply(Message(Chat(OWNER, 'private'), User(OWNER),
+                                             text=str(HELPER)), OWNER)
+
+    def command(self, sender_id, replied_user=None, group_id=GROUP_A):
+        reply = Message(Chat(group_id), replied_user) if replied_user else None
+        return Message(Chat(group_id), User(sender_id), text='/unsetlord',
+                       reply_to_message=reply)
+
+    def lords(self, group_id=GROUP_A):
+        return [r[0] for r in self.conn.execute(
+            "SELECT user_id FROM users WHERE group_id=?", (group_id,)).fetchall()]
+
+    def own(self, node_id, group_id=GROUP_A):
+        self.conn.execute("INSERT INTO chokepoint_owners (node_id, group_id) VALUES (?, ?)",
+                          (node_id, group_id))
+        self.conn.commit()
+
+    def owners(self):
+        return [r[0] for r in self.conn.execute(
+            "SELECT node_id FROM chokepoint_owners").fetchall()]
+
+    # --- the reply form -------------------------------------------------
+
+    def test_admin_reply_removes_that_lord(self):
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(), [])
+        self.assertIn('no longer a lord', self.bot.replies[-1][1])
+
+    def test_a_promoted_admin_can_remove_one_lord(self):
+        self.promote_helper()
+        admin_panel.handle_unsetlord(self.command(HELPER, User(PLAYER)))
+        self.assertEqual(self.lords(), [])
+
+    def test_a_stranger_cannot_remove_a_lord(self):
+        admin_panel.handle_unsetlord(self.command(PLAYER, User(PLAYER)))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('Only a bot admin', self.bot.replies[-1][1])
+
+    def test_removing_someone_who_is_not_a_lord_here_is_refused(self):
+        admin_panel.handle_unsetlord(self.command(OWNER, User(999)))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('not a lord', self.bot.replies[-1][1])
+
+    def test_private_chat_is_rejected(self):
+        msg = Message(Chat(OWNER, 'private'), User(OWNER), text='/unsetlord',
+                      reply_to_message=Message(Chat(OWNER, 'private'), User(PLAYER)))
+        admin_panel.handle_unsetlord(msg)
+        self.assertIn('only be used in groups', self.bot.replies[-1][1])
+        self.assertEqual(self.lords(), [PLAYER])
+
+    def test_disabled_setlord_feature_blocks_the_command(self):
+        admin_panel._set_feature('setlord', False)
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('disabled', self.bot.replies[-1][1])
+
+    def test_removal_is_logged(self):
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        entry = admin_panel.recent_log()[0]
+        self.assertEqual(entry['action'], 'lord_unassign')
+        self.assertEqual(entry['detail'], str(PLAYER))
+
+    def test_only_the_named_group_loses_its_lord(self):
+        add_group(self.conn, HELPER, GROUP_B)
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(GROUP_B), [HELPER])
+
+    # --- the group form -------------------------------------------------
+
+    def test_no_reply_offers_the_group_a_confirmation_first(self):
+        admin_panel.handle_unsetlord(self.command(OWNER))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('Retire', self.bot.replies[-1][1])
+        self.assertEqual(self.bot.last_keyboard(), [f'ap:ulc:{GROUP_A}'])
+
+    def test_a_promoted_admin_cannot_retire_a_group(self):
+        self.promote_helper()
+        admin_panel.handle_unsetlord(self.command(HELPER))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('owner', self.bot.replies[-1][1])
+
+    def test_a_promoted_admin_cannot_confirm_a_retirement(self):
+        self.promote_helper()
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}', user_id=HELPER))
+        self.assertEqual(self.lords(), [PLAYER])
+        _, text, alert = self.bot.last_answer()
+        self.assertTrue(alert)
+        self.assertIn('owner', text)
+
+    def test_confirming_removes_every_lord_of_the_group(self):
+        add_group(self.conn, HELPER, GROUP_A)
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}'))
+        self.assertEqual(self.lords(), [])
+        self.assertIn('retired', self.bot.edits[-1][2])
+
+    def test_retiring_a_group_leaves_the_others_alone(self):
+        add_group(self.conn, HELPER, GROUP_B)
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}'))
+        self.assertEqual(self.lords(GROUP_B), [HELPER])
+
+    def test_retirement_is_logged(self):
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}'))
+        entry = admin_panel.recent_log()[0]
+        self.assertEqual(entry['action'], 'group_unassign')
+        self.assertEqual(entry['detail'], str(PLAYER))
+
+    def test_a_group_with_no_lords_is_reported_not_wiped(self):
+        admin_panel.handle_unsetlord(self.command(OWNER, group_id=GROUP_B))
+        self.assertIn('no lord', self.bot.replies[-1][1])
+
+    # --- the live-trade guard -------------------------------------------
+
+    def test_a_group_with_a_trade_in_flight_keeps_its_lord(self):
+        admin_panel.set_lord_guard(lambda: {GROUP_A})
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('shipment', self.bot.replies[-1][1])
+
+    def test_the_guard_also_stops_a_confirmed_retirement(self):
+        admin_panel.set_lord_guard(lambda: {GROUP_A})
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}'))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertTrue(self.bot.last_answer()[2])
+
+    def test_a_trade_elsewhere_does_not_block_this_group(self):
+        admin_panel.set_lord_guard(lambda: {GROUP_B})
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(), [])
+
+    def test_an_unreadable_guard_deletes_nothing(self):
+        def broken():
+            raise RuntimeError('trades table is gone')
+        admin_panel.set_lord_guard(broken)
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(), [PLAYER])
+        self.assertIn('Could not check', self.bot.replies[-1][1])
+
+    # --- what a removal takes with it -----------------------------------
+
+    def test_the_last_lord_leaving_releases_the_chokepoints(self):
+        self.own('sue')
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.owners(), [])
+
+    def test_a_co_lord_leaving_keeps_the_chokepoints(self):
+        add_group(self.conn, HELPER, GROUP_A)
+        self.own('sue')
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.lords(), [HELPER])
+        self.assertEqual(self.owners(), ['sue'])
+
+    def test_another_groups_chokepoints_survive(self):
+        self.own('sue')
+        self.own('hor', GROUP_B)
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}'))
+        self.assertEqual(self.owners(), ['hor'])
+
+    def test_a_removed_lord_can_be_appointed_again(self):
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        admin_panel.handle_setlord(Message(Chat(GROUP_A), User(OWNER), text='/setlord',
+                                           reply_to_message=Message(Chat(GROUP_A), User(PLAYER))))
+        self.assertEqual(self.lords(), [PLAYER])
 
 
 class NotifyAdminsTest(PanelTestCase):
