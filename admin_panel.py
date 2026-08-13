@@ -580,19 +580,23 @@ def _group_list(call, page):
 def _group_card(call, gid):
     if not _require_admin(call):
         return
-    cols = ', '.join(catalog.all_keys())
-    rows = _q(f"SELECT user_id, home_sea, home_land, {cols} FROM users WHERE group_id=?", (gid,))
+    # An admin can disable every type, which would leave a trailing comma in the
+    # SELECT below rather than an empty card.
+    cols = ''.join(', ' + key for key in catalog.all_keys())
+    rows = _q(f"SELECT user_id, home_sea, home_land{cols} FROM users WHERE group_id=?", (gid,))
     if not rows:
         _answer(call, _t('err_generic'), alert=True)
         return
     row = rows[0]
     trades = _trade_counts(gid)
+    sections = '\n'.join(
+        "{}\n<blockquote>{}</blockquote>".format(
+            _t('sec_' + kind), _lines({c: row[c] for c in catalog.keys(kind)}))
+        for kind in catalog.kind_order())
     text = _t('group_card',
               title=_esc(_title(gid)),
               lord=_user_link(row['user_id']),
-              resources=_lines({c: row[c] for c in catalog.keys('resource')}),
-              units=_lines({c: row[c] for c in catalog.keys('unit')}),
-              buildings=_lines({c: row[c] for c in catalog.keys('building')}),
+              sections=sections,
               active=trades['active'], done=trades['done'],
               home_sea=_esc(row['home_sea'] or _t('unset')),
               home_land=_esc(row['home_land'] or _t('unset')))
@@ -801,6 +805,9 @@ def _reset_apply(call, gid):
         return
     columns = catalog.all_keys()
     defaults = catalog.defaults()
+    if not columns:                       # every type disabled: nothing to reset
+        _answer(call, _t('err_generic'), alert=True)
+        return
     cols = ', '.join(columns)
     rows = _q(f"SELECT {cols} FROM users WHERE group_id=?", (gid,))
     if not rows:

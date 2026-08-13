@@ -241,6 +241,22 @@ class StatsTest(PanelTestCase):
         _, _, alert = self.bot.last_answer()
         self.assertTrue(alert)
 
+    def test_group_card_survives_every_type_being_disabled(self):
+        # Reachable now that builtins can be hidden; it used to be impossible.
+        self.conn.execute("UPDATE asset_catalog SET hidden=1")
+        self.conn.commit()
+        admin_panel.handle_callback(self.call(f'ap:g:{GROUP_A}'))
+        self.assertIn('Persia', self.bot.edits[-1][2])
+
+    def test_group_card_follows_the_section_order(self):
+        admin_panel.handle_callback(self.call(f'ap:g:{GROUP_A}'))
+        text = self.bot.edits[-1][2]
+        self.assertLess(text.index('Buildings:'), text.index('Army:'))
+        catalog.move_kind('unit', 'up')
+        admin_panel.handle_callback(self.call(f'ap:g:{GROUP_A}'))
+        text = self.bot.edits[-1][2]
+        self.assertLess(text.index('Army:'), text.index('Buildings:'))
+
     def test_empty_world_reports_no_groups(self):
         self.conn.execute("DELETE FROM users")
         self.conn.commit()

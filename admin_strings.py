@@ -20,11 +20,11 @@ ACTIONS = ('asset_edit', 'feature_toggle', 'weekly_update', 'reset_country', 'lo
            'lord_unassign', 'group_unassign',
            'admin_add', 'admin_remove', 'trade_photo', 'war_photo',
            'trade_config', 'chokepoint_owner', 'group_home',
-           'asset_add', 'asset_type_edit', 'asset_hide', 'asset_cost')
+           'asset_add', 'asset_type_edit', 'asset_hide', 'asset_cost', 'asset_kind_order')
 
 # CatalogError codes that get their own message; anything else falls back to
 # 'err_generic'. Kept next to the strings so the two stay in step.
-CATALOG_ERRORS = ('bad_key', 'exists', 'reserved', 'column_exists', 'bad_kind', 'builtin',
+CATALOG_ERRORS = ('bad_key', 'exists', 'reserved', 'column_exists', 'bad_kind', 'engine_key',
                   'bad_produces', 'not_a_building', 'not_a_resource', 'bad_resource', 'unknown',
                   'in_transit', 'guard_unavailable', 'bad_direction')
 
@@ -62,12 +62,15 @@ STRINGS = {
         'mil_title': "⚔️ وضعیت نظامی جهانی\n<blockquote>{lines}</blockquote>\n"
                      "🏆 قوی‌ترین ارتش: {strongest}",
         'group_list_title': "🏳 گروه را انتخاب کنید (صفحه {p} از {n}):",
+        # {sections} is one "header + <blockquote>" block per kind, in the order
+        # asset_catalog.kind_order() gives.
         'group_card': "🏳 <b>{title}</b>\n👤 لرد: {lord}\n\n"
-                      "💰 دارایی:\n<blockquote>{resources}</blockquote>\n"
-                      "⚔️ ارتش:\n<blockquote>{units}</blockquote>\n"
-                      "🏭 ساختمان‌ها:\n<blockquote>{buildings}</blockquote>\n"
+                      "{sections}\n"
                       "🚢 تجارت: فعال {active} | کامل‌شده {done}\n"
                       "⚓️ موقعیت دریایی: {home_sea} | 🏔 موقعیت زمینی: {home_land}",
+        'sec_resource': "💰 دارایی:",
+        'sec_unit': "⚔️ ارتش:",
+        'sec_building': "🏭 ساختمان‌ها:",
         'unset': "تعیین نشده",
         'nobody': "ندارد",
         'feat_title': "⚙️ بخش‌های ربات — برای تغییر وضعیت روی هر مورد بزنید:",
@@ -169,7 +172,11 @@ STRINGS = {
         'cat_extra_resource': "🚢 قابل تجارت: {tradeable}",
         'cat_produces_none': "چیزی تولید نمی‌کند",
         'cat_costs_none': "رایگان",
-        'cat_builtin_note': "\n\nℹ️ این نوع همراه بازی آمده است؛ قابل ویرایش هست اما حذف نمی‌شود.",
+        'cat_builtin_note': "\n\nℹ️ این نوع همراه بازی آمده است. مثل بقیه می‌توانید ویرایش، "
+                            "غیرفعال یا حذفش کنید.",
+        'cat_engine_note': "\n\n🔒 سیستم تجارت مستقیماً به این ستون وابسته است (کرایه، عوارض، "
+                           "امانت و ظرفیت کشتی). می‌توانید غیرفعالش کنید، اما حذف کامل ممکن "
+                           "نیست — محموله‌های در راه از بین می‌رفتند.",
         'cat_hidden_note': "\n\n🚫 این نوع از بازی حذف شده است. مقادیر ذخیره‌شده دست‌نخورده‌اند و "
                            "با بازگرداندن دوباره ظاهر می‌شوند.",
         'btn_cat_rename': "✏️ تغییر نام",
@@ -208,13 +215,16 @@ STRINGS = {
         'cat_err_reserved': "❌ این کلید رزرو شده است.",
         'cat_err_column_exists': "❌ ستونی با این نام از قبل در پایگاه داده هست.",
         'cat_err_bad_kind': "❌ دسته نامعتبر است.",
-        'cat_err_builtin': "❌ انواع پیش‌فرض بازی قابل حذف نیستند.",
+        'cat_err_engine_key': "❌ سیستم تجارت مستقیماً به این ستون وابسته است و حذف کاملش "
+                              "محموله‌های در راه را از بین می‌برد. به‌جایش «حذف از بازی» "
+                              "را بزنید.",
         'cat_err_bad_produces': "❌ یک ساختمان فقط می‌تواند منبع یا واحد تولید کند.",
         'cat_err_not_a_building': "❌ این مورد ساختمان نیست.",
         'cat_err_not_a_resource': "❌ این مورد منبع نیست.",
         'cat_err_bad_resource': "❌ منبع نامعتبر است.",
         'cat_err_unknown': "❌ چنین نوعی وجود ندارد.",
         'act_asset_remove': "حذف کامل نوع دارایی",
+        'act_asset_kind_order': "ترتیب بخش‌ها",
         'act_catalog_reset': "بازنشانی کامل فهرست دارایی‌ها",
         'act_log_clear': "پاک‌سازی گزارش اقدامات",
         'btn_cat_up': "⬆️ بالاتر",
@@ -223,6 +233,10 @@ STRINGS = {
         'cat_at_top': "همین حالا اول فهرست است.",
         'cat_at_bottom': "همین حالا آخر فهرست است.",
         'cat_moved': "✅ جابه‌جا شد.",
+        'btn_cat_order': "🔀 ترتیب بخش‌ها",
+        'cat_order_title': "🔀 ترتیب بخش‌ها در پیام دارایی و کارت گروه:\n"
+                           "<blockquote>{order}</blockquote>\n"
+                           "با فلش‌ها جای هر بخش را عوض کنید.",
         'btn_cat_delete': "❌ حذف کامل و همیشگی",
         'btn_cat_delete_yes': "🔥 بله، برای همیشه حذف کن",
         'cat_delete_confirm': "🔥 <b>حذف کامل «{label}»</b>\n<blockquote>کلید <code>{key}</code> "
@@ -232,6 +246,9 @@ STRINGS = {
                               "خارج شود، به‌جای این از «حذف از بازی» استفاده کنید.</blockquote>",
         'cat_delete_holders': "📊 {n} کشور مقدار غیرصفر برای این نوع دارند.",
         'cat_delete_holders_none': "📊 هیچ کشوری مقدار غیرصفری برای این نوع ندارد.",
+        'cat_delete_builtin_warning': "\n\n⚠️ این نوع همراه بازی آمده است. بعد از حذف، تنها راه "
+                                      "برگرداندنش «بازنشانی کامل فهرست دارایی‌ها» است، که آن هم "
+                                      "همهٔ کشورها را از مقدار اولیه شروع می‌کند.",
         'cat_deleted': "🔥 «{label}» برای همیشه حذف شد.",
         'cat_deleted_kept_column': "🔥 «{label}» از بازی حذف شد، اما نسخهٔ SQLite این سرور "
                                    "قدیمی‌تر از ۳٫۳۵ است و ستون آن در پایگاه داده باقی ماند. "
@@ -297,12 +314,15 @@ STRINGS = {
         'mil_title': "⚔️ World military\n<blockquote>{lines}</blockquote>\n"
                      "🏆 Strongest army: {strongest}",
         'group_list_title': "🏳 Choose a group (page {p} of {n}):",
+        # {sections} is one "header + <blockquote>" block per kind, in the order
+        # asset_catalog.kind_order() gives.
         'group_card': "🏳 <b>{title}</b>\n👤 Lord: {lord}\n\n"
-                      "💰 Resources:\n<blockquote>{resources}</blockquote>\n"
-                      "⚔️ Army:\n<blockquote>{units}</blockquote>\n"
-                      "🏭 Buildings:\n<blockquote>{buildings}</blockquote>\n"
+                      "{sections}\n"
                       "🚢 Trades: active {active} | completed {done}\n"
                       "⚓️ Sea location: {home_sea} | 🏔 Land location: {home_land}",
+        'sec_resource': "💰 Resources:",
+        'sec_unit': "⚔️ Army:",
+        'sec_building': "🏭 Buildings:",
         'unset': "not set",
         'nobody': "none",
         'feat_title': "⚙️ Bot sections — tap one to toggle it:",
@@ -405,7 +425,11 @@ STRINGS = {
         'cat_extra_resource': "🚢 Tradeable: {tradeable}",
         'cat_produces_none': "nothing",
         'cat_costs_none': "free",
-        'cat_builtin_note': "\n\nℹ️ This type shipped with the game — it can be retuned but not removed.",
+        'cat_builtin_note': "\n\nℹ️ This type shipped with the game. You can edit, disable or "
+                            "delete it like any other.",
+        'cat_engine_note': "\n\n🔒 The trade system addresses this column directly — fees, tolls, "
+                           "escrow and ship capacity. You can take it out of the game, but it "
+                           "cannot be deleted for good: shipments in flight would be lost.",
         'cat_hidden_note': "\n\n🚫 This type has been removed from the game. Its stored values are "
                            "untouched and come back if you restore it.",
         'btn_cat_rename': "✏️ Rename",
@@ -444,13 +468,16 @@ STRINGS = {
         'cat_err_reserved': "❌ That key is reserved.",
         'cat_err_column_exists': "❌ A database column with that name already exists.",
         'cat_err_bad_kind': "❌ Invalid category.",
-        'cat_err_builtin': "❌ Types that shipped with the game cannot be removed.",
+        'cat_err_engine_key': "❌ The trade system depends on this column directly, and deleting "
+                              "it would destroy shipments in flight. Use “Remove from the game” "
+                              "instead.",
         'cat_err_bad_produces': "❌ A building can only produce a resource or a unit.",
         'cat_err_not_a_building': "❌ That entry is not a building.",
         'cat_err_not_a_resource': "❌ That entry is not a resource.",
         'cat_err_bad_resource': "❌ Invalid resource.",
         'cat_err_unknown': "❌ No such type.",
         'act_asset_remove': "asset type destroyed",
+        'act_asset_kind_order': "section order",
         'act_catalog_reset': "asset catalog factory reset",
         'act_log_clear': "action log cleared",
         'btn_cat_up': "⬆️ Move up",
@@ -459,6 +486,10 @@ STRINGS = {
         'cat_at_top': "Already first in the list.",
         'cat_at_bottom': "Already last in the list.",
         'cat_moved': "✅ Moved.",
+        'btn_cat_order': "🔀 Section order",
+        'cat_order_title': "🔀 Section order in the assets message and the group card:\n"
+                           "<blockquote>{order}</blockquote>\n"
+                           "Use the arrows to move a section.",
         'btn_cat_delete': "❌ Delete permanently",
         'btn_cat_delete_yes': "🔥 Yes, delete it for good",
         'cat_delete_confirm': "🔥 <b>Permanently delete “{label}”</b>\n<blockquote>The key "
@@ -468,6 +499,9 @@ STRINGS = {
                               "temporarily, use “Remove from the game” instead.</blockquote>",
         'cat_delete_holders': "📊 {n} countries hold a non-zero value for this type.",
         'cat_delete_holders_none': "📊 No country holds a non-zero value for this type.",
+        'cat_delete_builtin_warning': "\n\n⚠️ This type shipped with the game. Once it is gone, "
+                                      "the only way back is a full factory reset of the catalog, "
+                                      "and that restarts every country from the default amount.",
         'cat_deleted': "🔥 “{label}” was deleted for good.",
         'cat_deleted_kept_column': "🔥 “{label}” is out of the game, but this server's SQLite is "
                                    "older than 3.35, so its column stayed in the database. "
@@ -534,12 +568,15 @@ STRINGS = {
         'mil_title': "⚔️ Dünya askeri gücü\n<blockquote>{lines}</blockquote>\n"
                      "🏆 En güçlü ordu: {strongest}",
         'group_list_title': "🏳 Bir grup seçin ({p}/{n}. sayfa):",
+        # {sections} is one "header + <blockquote>" block per kind, in the order
+        # asset_catalog.kind_order() gives.
         'group_card': "🏳 <b>{title}</b>\n👤 Lord: {lord}\n\n"
-                      "💰 Kaynaklar:\n<blockquote>{resources}</blockquote>\n"
-                      "⚔️ Ordu:\n<blockquote>{units}</blockquote>\n"
-                      "🏭 Binalar:\n<blockquote>{buildings}</blockquote>\n"
+                      "{sections}\n"
                       "🚢 Ticaret: etkin {active} | tamamlanan {done}\n"
                       "⚓️ Deniz konumu: {home_sea} | 🏔 Kara konumu: {home_land}",
+        'sec_resource': "💰 Kaynaklar:",
+        'sec_unit': "⚔️ Ordu:",
+        'sec_building': "🏭 Binalar:",
         'unset': "ayarlanmadı",
         'nobody': "yok",
         'feat_title': "⚙️ Bot bölümleri — durumu değiştirmek için birine dokunun:",
@@ -643,7 +680,11 @@ STRINGS = {
         'cat_extra_resource': "🚢 Ticarete açık: {tradeable}",
         'cat_produces_none': "hiçbir şey",
         'cat_costs_none': "ücretsiz",
-        'cat_builtin_note': "\n\nℹ️ Bu tür oyunla birlikte gelir — ayarlanabilir ama kaldırılamaz.",
+        'cat_builtin_note': "\n\nℹ️ Bu tür oyunla birlikte gelir. Diğerleri gibi düzenleyebilir, "
+                            "devre dışı bırakabilir veya silebilirsiniz.",
+        'cat_engine_note': "\n\n🔒 Ticaret sistemi bu sütunu doğrudan kullanır — ücretler, geçiş "
+                           "ücretleri, emanet ve gemi kapasitesi. Oyundan kaldırabilirsiniz ama "
+                           "kalıcı olarak silinemez: yoldaki sevkiyatlar kaybolurdu.",
         'cat_hidden_note': "\n\n🚫 Bu tür oyundan kaldırıldı. Kayıtlı değerleri korunuyor ve "
                            "geri getirildiğinde yeniden görünecek.",
         'btn_cat_rename': "✏️ Yeniden adlandır",
@@ -682,13 +723,16 @@ STRINGS = {
         'cat_err_reserved': "❌ Bu anahtar ayrılmış.",
         'cat_err_column_exists': "❌ Bu adda bir veritabanı sütunu zaten var.",
         'cat_err_bad_kind': "❌ Geçersiz kategori.",
-        'cat_err_builtin': "❌ Oyunla gelen türler kaldırılamaz.",
+        'cat_err_engine_key': "❌ Ticaret sistemi bu sütuna doğrudan bağlı ve silmek yoldaki "
+                              "sevkiyatları yok ederdi. Bunun yerine “Oyundan kaldır” "
+                              "seçeneğini kullanın.",
         'cat_err_bad_produces': "❌ Bir bina yalnızca kaynak veya birim üretebilir.",
         'cat_err_not_a_building': "❌ Bu girdi bir bina değil.",
         'cat_err_not_a_resource': "❌ Bu girdi bir kaynak değil.",
         'cat_err_bad_resource': "❌ Geçersiz kaynak.",
         'cat_err_unknown': "❌ Böyle bir tür yok.",
         'act_asset_remove': "varlık türü kalıcı olarak silindi",
+        'act_asset_kind_order': "bölüm sırası",
         'act_catalog_reset': "varlık kataloğu fabrika ayarlarına döndürüldü",
         'act_log_clear': "işlem kaydı temizlendi",
         'btn_cat_up': "⬆️ Yukarı taşı",
@@ -697,6 +741,10 @@ STRINGS = {
         'cat_at_top': "Zaten listenin başında.",
         'cat_at_bottom': "Zaten listenin sonunda.",
         'cat_moved': "✅ Taşındı.",
+        'btn_cat_order': "🔀 Bölüm sırası",
+        'cat_order_title': "🔀 Varlık mesajındaki ve grup kartındaki bölüm sırası:\n"
+                           "<blockquote>{order}</blockquote>\n"
+                           "Bir bölümü taşımak için okları kullanın.",
         'btn_cat_delete': "❌ Kalıcı olarak sil",
         'btn_cat_delete_yes': "🔥 Evet, tamamen sil",
         'cat_delete_confirm': "🔥 <b>“{label}” kalıcı olarak silinsin mi?</b>\n<blockquote>"
@@ -706,6 +754,9 @@ STRINGS = {
                               "için “Oyundan kaldır” seçeneğini kullanın.</blockquote>",
         'cat_delete_holders': "📊 {n} ülkenin bu tür için sıfırdan farklı değeri var.",
         'cat_delete_holders_none': "📊 Hiçbir ülkenin bu tür için sıfırdan farklı değeri yok.",
+        'cat_delete_builtin_warning': "\n\n⚠️ Bu tür oyunla birlikte geldi. Silindikten sonra geri "
+                                      "getirmenin tek yolu kataloğu fabrika ayarlarına döndürmek, "
+                                      "o da her ülkeyi başlangıç miktarından başlatır.",
         'cat_deleted': "🔥 “{label}” kalıcı olarak silindi.",
         'cat_deleted_kept_column': "🔥 “{label}” oyundan çıktı, ancak bu sunucudaki SQLite "
                                    "3.35'ten eski olduğu için sütunu veritabanında kaldı. "

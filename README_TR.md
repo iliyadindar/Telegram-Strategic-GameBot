@@ -145,13 +145,13 @@ Okçular artık varlıklar ekranında, yükseltme menüsünde, haftalık üretim
 
 ### Listedeki sıra
 
-Yeni bir tür her zaman kendi türünün sonuna eklenir ki bu genelde doğru yer değildir. Türün ekranındaki **⬆️ Yukarı taşı / ⬇️ Aşağı taşı** onu komşusuyla yer değiştirir; böylece en son eklediğiniz kaynak paranın üstünde durabilir. Sıralama tür içindedir — önce kaynaklar, sonra birimler, sonra binalar — ve ekran mevcut yeri gösterir (“9 içinde 3”).
+Yeni bir tür her zaman kendi türünün sonuna eklenir ki bu genelde doğru yer değildir. Türün ekranındaki **⬆️ Yukarı taşı / ⬇️ Aşağı taşı** onu komşusuyla yer değiştirir; böylece en son eklediğiniz kaynak paranın üstünde durabilir. Sıralama tür içindedir ve ekran mevcut yeri gösterir (“9 içinde 3”).
 
-### Yerleşik türler, gizleme ve kalıcı silme
+Katalog ana ekranındaki **🔀 Bölüm sırası**, üç türden hangisinin `/varlıklar` mesajında ve panelin grup kartında önce geleceğini belirler. Varsayılan sıra: kaynaklar → binalar → ordu. Oklar bir bölümün tamamını taşır.
 
-Oyunla gelen 8 kaynak, 10 birim ve 18 bina **yerleşik** olarak kaydedilir. Yeniden adlandırılabilir, ayarlanabilir ve sıraları değiştirilebilir ama asla kaldırılamazlar; çünkü ticaret sistemi ve savaş akışı onlara anahtarla atıfta bulunur.
+### Gizleme ve kalıcı silme
 
-Özel bir tür iki farklı şekilde ortadan kaldırılabilir:
+Her ikisi de, oyunla gelmiş olsun ya da sizin eklediğiniz olsun, her türe uygulanabilir:
 
 | | 🗑 **Oyundan kaldır** | ❌ **Kalıcı olarak sil** |
 |---|---|---|
@@ -161,6 +161,12 @@ Oyunla gelen 8 kaynak, 10 birim ve 18 bina **yerleşik** olarak kaydedilir. Yeni
 | Geri alınır mı | evet | hayır |
 
 Kalıcı silme, türe atıfta bulunan her şeyi de temizler: onu üreten bir bina artık hiçbir şey üretmez ve adını geçiren yükseltme maliyetleri düşer. Yolda olan bir ticaret o malı taşıyorsa silme reddedilir; aksi hâlde iade artık var olmayan bir sütuna yazmaya çalışır ve yük kaybolur. SQLite 3.35'ten eskiyse sütun düşürülemez; tür yine oyundan çıkar ve panel sütunun kaldığını söyler.
+
+Gizlenen bir kaynak yükseltmelerde de artık tahsil edilmez. Maliyet satırı korunur, dolayısıyla kaynağı geri getirmek maliyeti de geri getirir.
+
+**Dört anahtar kalıcı olarak silinemez**, yalnızca gizlenebilir: `money`, `small_ships`, `medium_ships` ve `large_ships`. Ticaret sistemi bu sütunlara doğrudan SQL yazar — ücretler, geçiş ücretleri, emanet, iadeler ve gemi kapasitesi — bu yüzden birini düşürmek ilk iadeyi bozar ve yoldaki yükü kaybettirir. Gizlemek sorun değil, çünkü sütun yerinde kalır. Oyunla gelen diğer her tür — atlılar, toplar, banka dâhil — tamamen silinebilir.
+
+Oyunla gelen bir türün silinmesi kaydedilir, böylece sonraki başlangıçta yeniden eklenmez. Geri getirmenin tek yolu fabrika ayarlarına dönmektir; bu, türü başlangıç değeriyle geri getirir ve her ülke sıfırdan başlar.
 
 ### Sıfırdan başlamak
 

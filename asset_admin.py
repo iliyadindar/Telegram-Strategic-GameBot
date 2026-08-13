@@ -114,6 +114,10 @@ def handle(call, parts):
         _unhide(call, parts[2])
     elif op == 'catmv':
         _move(call, parts[2], parts[3])
+    elif op == 'catord':
+        _kind_order_screen(call)
+    elif op == 'catordmv':
+        _move_kind(call, parts[2], parts[3])
     elif op == 'catdel':
         _delete_confirm(call, parts[2])
     elif op == 'catdelc':
@@ -133,10 +137,11 @@ def _catalog_home(call):
     counts = {kind: len(catalog.keys(kind)) for kind in catalog.KINDS}
     buttons = [types.InlineKeyboardButton(f"{_t('kind_' + kind)} ({counts[kind]})",
                                           callback_data=f'ap:catk:{kind}:0')
-               for kind in catalog.KINDS]
+               for kind in catalog.kind_order()]
+    order = [types.InlineKeyboardButton(_t('btn_cat_order'), callback_data='ap:catord')]
     _show(call, _t('cat_title', resources=counts['resource'], units=counts['unit'],
                    buildings=counts['building']),
-          _markup(buttons, back='ap:home'))
+          _markup(buttons, order, back='ap:home'))
     _answer(call)
 
 
@@ -196,6 +201,8 @@ def _entry_screen(call, key):
     extra = (extra + '\n' if extra else '') + _t('cat_rank', place=place, total=total)
 
     note = _t('cat_builtin_note') if row['builtin'] else ''
+    if key in catalog.ENGINE_KEYS:
+        note += _t('cat_engine_note')
     if row['hidden']:
         note += _t('cat_hidden_note')
 
@@ -218,13 +225,15 @@ def _entry_screen(call, key):
         order.append(types.InlineKeyboardButton(_t('btn_cat_down'),
                                                 callback_data=f'ap:catmv:{key}:down'))
 
-    if not row['builtin']:
-        if row['hidden']:
-            buttons.append(types.InlineKeyboardButton(_t('btn_cat_unhide'),
-                                                      callback_data=f'ap:catshow:{key}'))
-        else:
-            buttons.append(types.InlineKeyboardButton(_t('btn_cat_hide'),
-                                                      callback_data=f'ap:cathide:{key}'))
+    # Every type can be taken out of the game, shipped or not. Only permanent
+    # deletion is withheld, and only for the keys the trade engine names in SQL.
+    if row['hidden']:
+        buttons.append(types.InlineKeyboardButton(_t('btn_cat_unhide'),
+                                                  callback_data=f'ap:catshow:{key}'))
+    else:
+        buttons.append(types.InlineKeyboardButton(_t('btn_cat_hide'),
+                                                  callback_data=f'ap:cathide:{key}'))
+    if key not in catalog.ENGINE_KEYS:
         buttons.append(types.InlineKeyboardButton(_t('btn_cat_delete'),
                                                   callback_data=f'ap:catdel:{key}'))
 
@@ -257,6 +266,48 @@ def _move(call, key, direction):
     _entry_screen(call, key)
 
 
+def _kind_order_screen(call):
+    """Which of the three sections comes first in the status message."""
+    if not _require_admin(call):
+        return
+    order = catalog.kind_order()
+    # One keyboard row per section, so each ⬆️/⬇️ sits beside the section it
+    # moves. _markup() stacks everything one-per-line, which would leave three
+    # identical arrow pairs with nothing saying which is which.
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    for place, kind in enumerate(order, start=1):
+        row = [types.InlineKeyboardButton(f"{place}. {_t('kind_' + kind)}",
+                                          callback_data='ap:catord')]
+        if place > 1:
+            row.append(types.InlineKeyboardButton(_t('btn_cat_up'),
+                                                  callback_data=f'ap:catordmv:{kind}:up'))
+        if place < len(order):
+            row.append(types.InlineKeyboardButton(_t('btn_cat_down'),
+                                                  callback_data=f'ap:catordmv:{kind}:down'))
+        markup.row(*row)
+    _back_button(markup, 'ap:cat')
+    _show(call, _t('cat_order_title',
+                   order=' ← '.join(_t('kind_' + kind) for kind in order)), markup)
+    _answer(call)
+
+
+def _move_kind(call, kind, direction):
+    if not _require_admin(call):
+        return
+    try:
+        moved = catalog.move_kind(kind, direction)
+    except catalog.CatalogError as exc:
+        _answer(call, _err(exc), alert=True)
+        return
+    if not moved:
+        _answer(call, _t('cat_at_top' if direction == 'up' else 'cat_at_bottom'))
+        return
+    place, _total = catalog.kind_rank(kind)
+    _log(call.from_user.id, 'asset_kind_order', kind, f'moved {direction} to #{place}')
+    _answer(call, _t('cat_moved'))
+    _kind_order_screen(call)
+
+
 # ---------------------------------------------------------------------------
 # Destroying a type
 # ---------------------------------------------------------------------------
@@ -269,12 +320,16 @@ def _delete_confirm(call, key):
     if row is None:
         _answer(call, _t('cat_err_unknown'), alert=True)
         return
-    if row['builtin']:
-        _answer(call, _t('cat_err_builtin'), alert=True)
+    if key in catalog.ENGINE_KEYS:
+        _answer(call, _t('cat_err_engine_key'), alert=True)
         return
     count = catalog.holders(key)
     holders = (_t('cat_delete_holders', n=count) if count
                else _t('cat_delete_holders_none'))
+    # Deleting something that shipped with the game is the one delete an admin
+    # cannot undo by re-adding it, so it says so before the confirm button.
+    if row['builtin']:
+        holders += _t('cat_delete_builtin_warning')
     confirm = types.InlineKeyboardButton(_t('btn_cat_delete_yes'),
                                          callback_data=f'ap:catdelc:{key}')
     _show(call, _t('cat_delete_confirm', label=_esc(_label(key)), key=_esc(key),

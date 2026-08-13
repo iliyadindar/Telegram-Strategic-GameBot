@@ -37,10 +37,12 @@ STRINGS = {
                           "ریپلای کند و /setlord بزند.",
         'not_admin': "شما ادمین نیستید.",
         'btn_back': "🔙 بازگشت",
-        'assets_title': "💰 دارایی:\n<blockquote>{resources}</blockquote>\n\n"
-                        "⚔️ ارتش:\n<blockquote>{units}</blockquote>\n\n"
-                        "🏭 ساختمان‌ها:\n<blockquote>{buildings}</blockquote>\n\n"
-                        "📜 معاهدات:\n<blockquote>{treaties}</blockquote>",
+        # {sections} is one "header + <blockquote>" block per kind, joined in
+        # the order asset_catalog.kind_order() gives.
+        'assets_title': "{sections}\n\n📜 معاهدات:\n<blockquote>{treaties}</blockquote>",
+        'sec_resource': "💰 دارایی:",
+        'sec_unit': "⚔️ ارتش:",
+        'sec_building': "🏭 ساختمان‌ها:",
         'nothing': "ندارد",
         'upgrade_pick': "انتخاب کنید که کدام بخش را می‌خواهید ارتقا دهید:",
         'upgrade_confirm': "برای ارتقا {label} به این مقادیر نیاز دارید:\n<blockquote>{costs}</blockquote>",
@@ -66,10 +68,12 @@ STRINGS = {
                           "player's message with /setlord.",
         'not_admin': "You are not an admin.",
         'btn_back': "🔙 Back",
-        'assets_title': "💰 Resources:\n<blockquote>{resources}</blockquote>\n\n"
-                        "⚔️ Army:\n<blockquote>{units}</blockquote>\n\n"
-                        "🏭 Buildings:\n<blockquote>{buildings}</blockquote>\n\n"
-                        "📜 Treaties:\n<blockquote>{treaties}</blockquote>",
+        # {sections} is one "header + <blockquote>" block per kind, joined in
+        # the order asset_catalog.kind_order() gives.
+        'assets_title': "{sections}\n\n📜 Treaties:\n<blockquote>{treaties}</blockquote>",
+        'sec_resource': "💰 Resources:",
+        'sec_unit': "⚔️ Army:",
+        'sec_building': "🏭 Buildings:",
         'nothing': "none",
         'upgrade_pick': "Choose what you want to upgrade:",
         'upgrade_confirm': "Upgrading {label} costs:\n<blockquote>{costs}</blockquote>",
@@ -95,10 +99,12 @@ STRINGS = {
                           "mesajını yanıtlayıp /setlord göndermesi gerekir.",
         'not_admin': "Yönetici değilsiniz.",
         'btn_back': "🔙 Geri",
-        'assets_title': "💰 Kaynaklar:\n<blockquote>{resources}</blockquote>\n\n"
-                        "⚔️ Ordu:\n<blockquote>{units}</blockquote>\n\n"
-                        "🏭 Binalar:\n<blockquote>{buildings}</blockquote>\n\n"
-                        "📜 Antlaşmalar:\n<blockquote>{treaties}</blockquote>",
+        # {sections} is one "header + <blockquote>" block per kind, joined in
+        # the order asset_catalog.kind_order() gives.
+        'assets_title': "{sections}\n\n📜 Antlaşmalar:\n<blockquote>{treaties}</blockquote>",
+        'sec_resource': "💰 Kaynaklar:",
+        'sec_unit': "⚔️ Ordu:",
+        'sec_building': "🏭 Binalar:",
         'nothing': "yok",
         'upgrade_pick': "Neyi yükseltmek istediğinizi seçin:",
         'upgrade_confirm': "{label} yükseltmesi şunlara mal olur:\n<blockquote>{costs}</blockquote>",
@@ -190,6 +196,14 @@ def _lines(values):
 # ---------------------------------------------------------------------------
 
 
+def sections(values, joiner='\n\n'):
+    """One "header + quoted list" block per kind, in the admin's chosen order."""
+    return joiner.join(
+        "{}\n<blockquote>{}</blockquote>".format(
+            _t('sec_' + kind), _lines({k: values[k] for k in catalog.keys(kind)}))
+        for kind in catalog.kind_order())
+
+
 def show_assets(chat_id, group_id):
     columns = catalog.all_keys()
     values = _row(group_id, list(columns) + ['treaties'])
@@ -197,9 +211,7 @@ def show_assets(chat_id, group_id):
         _bot.send_message(chat_id, _t('not_registered'))
         return
     text = _t('assets_title',
-              resources=_lines({k: values[k] for k in catalog.keys('resource')}),
-              units=_lines({k: values[k] for k in catalog.keys('unit')}),
-              buildings=_lines({k: values[k] for k in catalog.keys('building')}),
+              sections=sections(values),
               treaties=_esc(values['treaties']) or _t('nothing'))
     _bot.send_message(chat_id, text, parse_mode='HTML')
 
@@ -313,7 +325,7 @@ def weekly_update(chat_id, group_id):
 def editor_menu(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(*[types.InlineKeyboardButton(_t('kind_' + kind), callback_data=f'ag:edk:{kind}')
-                 for kind in catalog.KINDS])
+                 for kind in catalog.kind_order()])
     _bot.send_message(chat_id, _t('editor_pick_kind'), reply_markup=markup)
 
 

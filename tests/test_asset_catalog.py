@@ -238,9 +238,24 @@ class HideTest(CatalogTestCase):
         catalog.hide('archers')
         self.assertIn('archers', catalog.all_keys(include_hidden=True))
 
-    def test_builtins_cannot_be_hidden(self):
-        with self.assertRaises(catalog.CatalogError):
-            catalog.hide('money')
+    def test_builtins_can_be_hidden_and_restored(self):
+        catalog.hide('meat')
+        self.assertNotIn('meat', catalog.all_keys())
+        catalog.unhide('meat')
+        self.assertIn('meat', catalog.all_keys())
+
+    def test_an_engine_key_can_still_be_hidden(self):
+        # Hiding keeps the column, so trade_system's direct SQL keeps working.
+        catalog.hide('money')
+        self.assertNotIn('money', catalog.all_keys())
+        self.assertIn('money', self.columns())
+
+    def test_hiding_a_resource_stops_it_being_charged_for_upgrades(self):
+        self.assertIn('wood', catalog.upgrade_cost('stone_factory'))
+        catalog.hide('wood')
+        self.assertNotIn('wood', catalog.upgrade_cost('stone_factory'))
+        catalog.unhide('wood')
+        self.assertIn('wood', catalog.upgrade_cost('stone_factory'))
 
     def test_hiding_a_produced_type_drops_it_from_production(self):
         catalog.add('archery_range', 'building', {'en': 'Archery Range'},
@@ -370,10 +385,28 @@ class RemoveTest(CatalogTestCase):
         row = self.conn.execute("SELECT archers FROM users WHERE group_id=-1").fetchone()
         self.assertEqual(row[0], 5)  # the old 42 is gone for good
 
-    def test_builtins_cannot_be_removed(self):
-        with self.assertRaises(catalog.CatalogError):
-            catalog.remove('money')
-        self.assertIn('money', self.columns())
+    def test_a_builtin_can_be_removed(self):
+        self.assertTrue(catalog.remove('meat'))
+        self.assertNotIn('meat', catalog.all_keys(include_hidden=True))
+        self.assertNotIn('meat', self.columns())
+
+    def test_a_removed_builtin_stays_dead_across_a_restart(self):
+        catalog.remove('meat')
+        catalog.init(self.conn)          # what the next bot start does
+        self.assertNotIn('meat', catalog.all_keys(include_hidden=True))
+        self.assertNotIn('meat', self.columns())
+        self.assertEqual(catalog.labels('meat'), {})
+
+    def test_removing_a_builtin_clears_the_costs_that_named_it(self):
+        catalog.remove('wood')
+        catalog.init(self.conn)
+        self.assertNotIn('wood', catalog.upgrade_cost('stone_factory'))
+
+    def test_engine_keys_cannot_be_removed(self):
+        for key in ('money', 'small_ships', 'medium_ships', 'large_ships'):
+            with self.assertRaises(catalog.CatalogError, msg=key):
+                catalog.remove(key)
+            self.assertIn(key, self.columns())
 
     def test_a_hidden_type_can_still_be_removed(self):
         catalog.hide('archers')
@@ -461,6 +494,27 @@ class FactoryResetTest(CatalogTestCase):
         catalog.factory_reset()
         self.assertIn('money', catalog.tradeable_resources())
 
+    def test_a_deleted_builtin_comes_back_with_its_column(self):
+        catalog.remove('meat')
+        catalog.factory_reset()
+        self.assertIn('meat', catalog.all_keys())
+        self.assertIn('meat', self.columns())
+        # The whole point of restoring the column: this SELECT used to raise.
+        cols = ', '.join(catalog.all_keys())
+        row = self.conn.execute(f"SELECT {cols} FROM users WHERE group_id=-1").fetchone()
+        self.assertIsNotNone(row)
+
+    def test_a_deleted_builtin_stays_back_after_a_restart(self):
+        catalog.remove('meat')
+        catalog.factory_reset()
+        catalog.init(self.conn)
+        self.assertIn('meat', catalog.all_keys())
+
+    def test_section_order_is_restored(self):
+        catalog.move_kind('unit', 'up')
+        catalog.factory_reset()
+        self.assertEqual(catalog.kind_order(), catalog.DEFAULT_KIND_ORDER)
+
     def test_group_balances_are_left_alone(self):
         self.conn.execute("UPDATE users SET money=7 WHERE group_id=-1")
         self.conn.commit()
@@ -482,6 +536,59 @@ class FactoryResetTest(CatalogTestCase):
         removed, kept = catalog.factory_reset()
         self.assertEqual(removed, [])
         self.assertEqual(set(catalog.keys('resource')), set(catalog.BUILTIN_RESOURCES))
+
+
+class KindOrderTest(CatalogTestCase):
+    """Which of the three sections comes first in the status message."""
+
+    def test_sections_ship_with_buildings_above_the_army(self):
+        self.assertEqual(catalog.kind_order(), ('resource', 'building', 'unit'))
+
+    def test_moving_a_section_swaps_it_with_its_neighbour(self):
+        self.assertTrue(catalog.move_kind('unit', 'up'))
+        self.assertEqual(catalog.kind_order(), ('resource', 'unit', 'building'))
+
+    def test_moving_down_swaps_the_other_way(self):
+        self.assertTrue(catalog.move_kind('resource', 'down'))
+        self.assertEqual(catalog.kind_order(), ('building', 'resource', 'unit'))
+
+    def test_the_first_section_cannot_move_up(self):
+        self.assertFalse(catalog.move_kind('resource', 'up'))
+        self.assertEqual(catalog.kind_order(), catalog.DEFAULT_KIND_ORDER)
+
+    def test_the_last_section_cannot_move_down(self):
+        self.assertFalse(catalog.move_kind('unit', 'down'))
+        self.assertEqual(catalog.kind_order(), catalog.DEFAULT_KIND_ORDER)
+
+    def test_a_bad_direction_is_refused(self):
+        with self.assertRaises(catalog.CatalogError):
+            catalog.move_kind('unit', 'sideways')
+
+    def test_an_unknown_kind_is_refused(self):
+        with self.assertRaises(catalog.CatalogError):
+            catalog.move_kind('treaties', 'up')
+
+    def test_the_order_survives_a_restart(self):
+        catalog.move_kind('unit', 'up')
+        catalog.init(self.conn)
+        self.assertEqual(catalog.kind_order(), ('resource', 'unit', 'building'))
+
+    def test_entries_follow_the_section_order(self):
+        def kinds_seen():
+            seen = []
+            for row in catalog.entries():
+                if row['kind'] not in seen:
+                    seen.append(row['kind'])
+            return tuple(seen)
+
+        self.assertEqual(kinds_seen(), ('resource', 'building', 'unit'))
+        catalog.move_kind('unit', 'up')
+        self.assertEqual(kinds_seen(), ('resource', 'unit', 'building'))
+
+    def test_rank_reports_the_place_in_the_order(self):
+        self.assertEqual(catalog.kind_rank('building'), (2, 3))
+        catalog.move_kind('building', 'up')
+        self.assertEqual(catalog.kind_rank('building'), (1, 3))
 
 
 if __name__ == '__main__':

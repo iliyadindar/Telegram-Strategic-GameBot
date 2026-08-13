@@ -79,10 +79,18 @@ class BrowsingTest(CatalogScreenTest):
         self.assertIn('stone_factory', text)
         self.assertIn('500', text)
 
-    def test_builtin_entry_is_marked_as_undeletable(self):
+    def test_a_builtin_offers_both_disable_and_delete(self):
+        self.tap('ap:cate:meat')
+        keyboard = self.bot.last_keyboard()
+        self.assertIn('ap:cathide:meat', keyboard)
+        self.assertIn('ap:catdel:meat', keyboard)
+
+    def test_an_engine_key_offers_disable_but_not_delete(self):
         self.tap('ap:cate:money')
-        self.assertIn('but not removed', self.screen())
-        self.assertNotIn('ap:cathide:money', self.bot.last_keyboard())
+        keyboard = self.bot.last_keyboard()
+        self.assertIn('ap:cathide:money', keyboard)
+        self.assertNotIn('ap:catdel:money', keyboard)
+        self.assertIn('cannot be deleted for good', self.screen())
 
     def test_unknown_entry_alerts(self):
         self.tap('ap:cate:phantom')
@@ -232,12 +240,55 @@ class HideScreenTest(CatalogScreenTest):
         entry = admin_panel.recent_log()[0]
         self.assertEqual(entry['action'], 'asset_hide')
 
-    def test_builtin_cannot_be_hidden_from_the_screen(self):
+    def test_a_builtin_can_be_hidden_and_restored_from_the_screen(self):
+        self.tap('ap:cathide:meat')
+        self.assertNotIn('meat', catalog.all_keys())
+        self.tap('ap:catshow:meat')
+        self.assertIn('meat', catalog.all_keys())
+
+    def test_an_engine_key_can_be_hidden_from_the_screen(self):
         self.tap('ap:cathide:money')
+        self.assertNotIn('money', catalog.all_keys())
+
+
+class DeleteBuiltinScreenTest(CatalogScreenTest):
+
+    def test_deleting_an_engine_key_is_refused(self):
+        self.tap('ap:catdel:money')
         _, text, alert = self.bot.last_answer()
         self.assertTrue(alert)
-        self.assertIn('cannot be removed', text)
+        self.assertIn('trade system', text)
         self.assertIn('money', catalog.all_keys())
+
+    def test_the_confirm_screen_warns_that_a_builtin_needs_a_factory_reset(self):
+        self.tap('ap:catdel:meat')
+        self.assertIn('factory reset', self.screen())
+
+    def test_a_builtin_is_destroyed_on_confirm(self):
+        self.tap('ap:catdelc:meat')
+        self.assertNotIn('meat', catalog.all_keys(include_hidden=True))
+
+
+class SectionOrderScreenTest(CatalogScreenTest):
+
+    def test_the_screen_lists_the_sections_in_order(self):
+        self.tap('ap:catord')
+        self.assertIn('Resources', self.screen())
+
+    def test_moving_a_section_reorders_it(self):
+        self.tap('ap:catordmv:unit:up')
+        self.assertEqual(catalog.kind_order(), ('resource', 'unit', 'building'))
+
+    def test_moving_past_the_end_is_reported_not_applied(self):
+        self.tap('ap:catordmv:resource:up')
+        _, text, _alert = self.bot.last_answer()
+        self.assertIn('Already first', text)
+        self.assertEqual(catalog.kind_order(), catalog.DEFAULT_KIND_ORDER)
+
+    def test_moving_a_section_is_logged(self):
+        self.tap('ap:catordmv:unit:up')
+        entry = admin_panel.recent_log()[0]
+        self.assertEqual(entry['action'], 'asset_kind_order')
 
 
 class ReorderScreenTest(CatalogScreenTest):

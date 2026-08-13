@@ -216,7 +216,11 @@ class EditorTest(UiTestCase):
         self.assertTrue(alert)
         self.assertIn('not an admin', text)
 
-    def test_admin_sees_the_kind_picker(self):
+    def test_admin_sees_the_kind_picker_in_section_order(self):
+        self.capture_keyboards()
+        asset_ui.editor_menu(GROUP)
+        self.assertEqual(self.keyboard(), ['ag:edk:resource', 'ag:edk:building', 'ag:edk:unit'])
+        catalog.move_kind('unit', 'up')
         self.capture_keyboards()
         asset_ui.editor_menu(GROUP)
         self.assertEqual(self.keyboard(), ['ag:edk:resource', 'ag:edk:unit', 'ag:edk:building'])

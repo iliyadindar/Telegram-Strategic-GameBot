@@ -20,7 +20,7 @@ manual timing. So six asks become five workstreams.
 
 | Decision | Choice |
 |---|---|
-| Deletion depth | Custom types only, full wipe. Builtins stay protected — trade and war reference them by key. |
+| Deletion depth | Custom types only, full wipe. Builtins stay protected — trade and war reference them by key. **Superseded** by [2026-08-14](2026-08-14-catalog-disable-delete-design.md): builtins can be disabled and deleted; only the four keys trade_system names in SQL are protected, and the war flow turned out to reference nothing. |
 | Reorder UI | ⬆️/⬇️ swap with the neighbour of the same kind. |
 | Map editing | Full editor: nodes, edges, weights, kinds move from code into tables. |
 | Manual timing | Per-edge minutes override, inside the map editor. |

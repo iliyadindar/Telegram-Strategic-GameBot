@@ -146,13 +146,13 @@ Archers now appear in the assets screen, the upgrade menu, the weekly production
 
 ### Ordering
 
-A new type is appended to the end of its kind, which is rarely where it belongs. **⬆️ Move up / ⬇️ Move down** on the type's screen swaps it with its neighbour, so a resource you added last can sit above money. Ordering is within a kind — resources, then units, then buildings — and the screen shows the current place ("3 of 9").
+A new type is appended to the end of its kind, which is rarely where it belongs. **⬆️ Move up / ⬇️ Move down** on the type's screen swaps it with its neighbour, so a resource you added last can sit above money. Ordering is within a kind, and the screen shows the current place ("3 of 9").
 
-### Built-ins, hiding and deletion
+**🔀 Section order** on the catalog home screen decides which of the three kinds comes first in `/دارایی` and on the panel's group card. It ships as resources → buildings → army; the arrows move a whole section.
 
-The 8 resources, 10 units and 18 buildings that shipped with the game are seeded as **built-in**. They can be renamed, retuned and reordered but never removed, because the trade system and the war flow refer to them by key.
+### Hiding and deletion
 
-A custom type can be taken away in two different ways:
+Either can be applied to any type, whether it shipped with the game or you added it yourself:
 
 | | 🗑 **Remove from the game** | ❌ **Delete permanently** |
 |---|---|---|
@@ -162,6 +162,12 @@ A custom type can be taken away in two different ways:
 | Reversible | yes | no |
 
 Deletion also clears the type out of anything that referenced it: a building that produced it now produces nothing, and upgrade costs naming it are dropped. It is refused while a trade in flight is carrying that good, because the refund would otherwise write to a column that no longer exists and the cargo would vanish. On SQLite older than 3.35 the column cannot be dropped; the type still leaves the game and the panel says the column stayed behind.
+
+A hidden resource also stops being charged for upgrades. The cost row survives, so restoring the resource restores the cost.
+
+**Four keys cannot be deleted**, only hidden: `money`, `small_ships`, `medium_ships` and `large_ships`. The trade system writes SQL against those columns directly — fees, tolls, escrow, refunds and ship capacity — so dropping one would break the next refund and lose whatever cargo was in flight. Hiding them is fine, because the column stays. Every other shipped type, cavalry and cannons and the bank included, can be deleted outright.
+
+Deleting a shipped type is recorded, so the next restart does not seed it back. The only way to bring it back is a factory reset, which restores the type at its shipped default with every country starting from zero.
 
 ### Starting over
 

@@ -8,17 +8,19 @@ weekly output and its upgrade cost) from inside Telegram.
     asset_catalog        one row per type: kind, order, default, production
     asset_labels         its display name per language
     asset_upgrade_costs  what one level of a building costs
+    asset_kind_order     which section comes first in the status message
+    asset_removed        builtins an admin deleted, so _seed() leaves them dead
 
 The types that shipped with the game are seeded as `builtin` on first run, with
 exactly the values the hardcoded version used, so existing saves are unchanged.
-Builtins can be retuned and renamed but never removed — the trade system and the
-war flow refer to them by key.
+Being builtin is a fact about where a type came from, not a protection: an admin
+can disable or delete one exactly like their own.
 
 Adding a type runs ALTER TABLE ... ADD COLUMN on `users`. There are two ways to
 take one away again. hide() is reversible: the column and its numbers stay, so
-re-adding the same key brings the values back. remove() is not: it drops the
-column and everything in it, which is why it refuses builtins and refuses any
-key a trade is currently carrying.
+unhide() puts the game back as it was. remove() is not: it drops the column and
+everything in it, which is why it refuses any key a trade is currently carrying
+and any key in ENGINE_KEYS.
 """
 
 import re
@@ -29,6 +31,17 @@ import threading
 RESERVED = frozenset({'user_id', 'group_id', 'treaties', 'home_sea', 'home_land'})
 
 KINDS = ('resource', 'unit', 'building')
+
+# The four columns trade_system writes SQL against by name rather than through
+# this module: money carries every fee, toll, escrow and refund, and the three
+# ship types are the sea vehicles themselves. Dropping one of these columns
+# would make the next refund raise and lose whatever cargo was in flight, so
+# remove() refuses them. hide() does not — hiding keeps the column, so the trade
+# system still works against a type players no longer see.
+ENGINE_KEYS = frozenset({'money', 'small_ships', 'medium_ships', 'large_ships'})
+
+# The status message's section order when nothing has reordered it.
+DEFAULT_KIND_ORDER = ('resource', 'building', 'unit')
 
 # A key becomes a SQL column name, so it is held to identifier rules and always
 # passed through _check_key() before it reaches a statement.
@@ -212,6 +225,19 @@ def _migrate():
             amount   INTEGER NOT NULL,
             PRIMARY KEY (building, resource)
         )''')
+        # A builtin an admin deleted. Without this, _seed() hands it straight
+        # back on the next start, because seeding is INSERT OR IGNORE over the
+        # BUILTIN_* literals and nothing else remembers the deletion.
+        _conn.execute('''CREATE TABLE IF NOT EXISTS asset_removed (
+            key TEXT PRIMARY KEY
+        )''')
+        _conn.execute('''CREATE TABLE IF NOT EXISTS asset_kind_order (
+            kind     TEXT PRIMARY KEY,
+            position INTEGER NOT NULL
+        )''')
+        _conn.executemany(
+            "INSERT OR IGNORE INTO asset_kind_order (kind, position) VALUES (?, ?)",
+            [(kind, (i + 1) * 10) for i, kind in enumerate(DEFAULT_KIND_ORDER)])
         _conn.commit()
 
 
@@ -244,16 +270,28 @@ def _builtin_cost_rows():
             for resource, amount in table.items()]
 
 
+def removed_builtins():
+    """Builtin keys an admin deleted. _seed() must not resurrect these."""
+    return frozenset(row['key'] for row in _q("SELECT key FROM asset_removed"))
+
+
 def _seed():
-    """Insert the shipped types. INSERT OR IGNORE, so admin edits are never undone."""
+    """Insert the shipped types.
+
+    INSERT OR IGNORE, so admin edits are never undone, and tombstoned keys are
+    filtered out of all three tables so a deleted builtin leaves no orphan label
+    or cost row behind either.
+    """
+    dead = removed_builtins()
     with _lock:
         _conn.executemany("INSERT OR IGNORE INTO asset_catalog " + _CATALOG_COLUMNS,
-                          _builtin_rows())
+                          [r for r in _builtin_rows() if r[0] not in dead])
         _conn.executemany("INSERT OR IGNORE INTO asset_labels (key, lang, label) VALUES (?, ?, ?)",
-                          _builtin_label_rows())
+                          [r for r in _builtin_label_rows() if r[0] not in dead])
         _conn.executemany(
             "INSERT OR IGNORE INTO asset_upgrade_costs (building, resource, amount) "
-            "VALUES (?, ?, ?)", _builtin_cost_rows())
+            "VALUES (?, ?, ?)",
+            [r for r in _builtin_cost_rows() if r[0] not in dead and r[1] not in dead])
         _conn.commit()
 
 
@@ -319,6 +357,51 @@ def validate_new_key(key):
 # ---------------------------------------------------------------------------
 
 
+def kind_order():
+    """The three kinds in the order their sections are shown.
+
+    Filtered to KINDS, which is what makes it safe to interpolate into SQL in
+    _kind_case(); nothing an admin types ever reaches this.
+    """
+    ranked = {row['kind']: row['position']
+              for row in _q("SELECT kind, position FROM asset_kind_order")}
+    return tuple(sorted(KINDS, key=lambda k: (ranked.get(k, 999),
+                                              DEFAULT_KIND_ORDER.index(k))))
+
+
+def _kind_case():
+    """kind_order() as a SQL sort expression."""
+    return ("CASE kind "
+            + ' '.join(f"WHEN '{kind}' THEN {i}" for i, kind in enumerate(kind_order()))
+            + " ELSE 99 END")
+
+
+def move_kind(kind, direction):
+    """Swap a whole section with its neighbour. False when already at that end."""
+    if direction not in ('up', 'down'):
+        raise CatalogError('bad_direction')
+    if kind not in KINDS:
+        raise CatalogError('bad_kind')
+    with _lock:
+        order = list(kind_order())
+        index = order.index(kind)
+        other = index - 1 if direction == 'up' else index + 1
+        if not 0 <= other < len(order):
+            return False
+        order[index], order[other] = order[other], order[index]
+        _conn.executemany("INSERT OR REPLACE INTO asset_kind_order (kind, position) VALUES (?, ?)",
+                          [(k, (i + 1) * 10) for i, k in enumerate(order)])
+        _conn.commit()
+    return True
+
+
+def kind_rank(kind):
+    """(place, total) of a section in the display order, 1-based."""
+    if kind not in KINDS:
+        raise CatalogError('bad_kind')
+    return kind_order().index(kind) + 1, len(KINDS)
+
+
 def entries(kind=None, include_hidden=False):
     """Catalog rows, ordered by kind then position."""
     sql = "SELECT * FROM asset_catalog"
@@ -330,7 +413,7 @@ def entries(kind=None, include_hidden=False):
         where.append("hidden=0")
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY CASE kind WHEN 'resource' THEN 0 WHEN 'unit' THEN 1 ELSE 2 END, position, key"
+    sql += f" ORDER BY {_kind_case()}, position, key"
     return _q(sql, tuple(params))
 
 
@@ -384,10 +467,17 @@ def production():
 
 
 def upgrade_cost(building):
+    """What one level costs, in resources that are actually in the game.
+
+    A cost naming a hidden resource is skipped rather than charged: deducting
+    something the group cannot see anywhere would be indistinguishable from a
+    bug. The row survives, so re-enabling the resource restores the cost.
+    """
+    visible = set(keys('resource'))
     return {row['resource']: row['amount']
             for row in _q("SELECT resource, amount FROM asset_upgrade_costs WHERE building=?",
                           (building,))
-            if row['amount'] > 0}
+            if row['amount'] > 0 and row['resource'] in visible}
 
 
 # ---------------------------------------------------------------------------
@@ -471,10 +561,12 @@ def set_upgrade_cost(building, resource, amount):
 
 
 def hide(key):
-    """Remove a custom type from the game without touching its stored numbers."""
-    row = _require_known(key)
-    if row['builtin']:
-        raise CatalogError('builtin')
+    """Take a type out of the game without touching its stored numbers.
+
+    Allowed for every type, ENGINE_KEYS included: the column stays, so nothing
+    that addresses it by name breaks. Only what players see changes.
+    """
+    _require_known(key)
     _exec("UPDATE asset_catalog SET hidden=1 WHERE key=?", (key,))
 
 
@@ -595,14 +687,19 @@ def remove(key):
     for ALTER TABLE ... DROP COLUMN (SQLite < 3.35). In that case the type is
     still gone from the game and only an orphaned column survives, so the
     caller can say so rather than reporting a clean delete.
+
+    A builtin is tombstoned on the way out, because _seed() would otherwise
+    re-insert it on the next start.
     """
     row = _require_known(key)
-    if row['builtin']:
-        raise CatalogError('builtin')
+    if key in ENGINE_KEYS:
+        raise CatalogError('engine_key')
     if key in keys_in_transit():
         raise CatalogError('in_transit')
     _check_key(key)
     with _lock:
+        if row['builtin']:
+            _conn.execute("INSERT OR IGNORE INTO asset_removed (key) VALUES (?)", (key,))
         # Buildings that produced it now produce nothing, rather than pointing
         # at a key production() would silently drop anyway.
         _conn.execute("UPDATE asset_catalog SET produces='', output=0 WHERE produces=?", (key,))
@@ -621,8 +718,11 @@ def remove(key):
 def factory_reset():
     """Restore the shipped catalog. Group balances are deliberately untouched.
 
-    Every custom type is destroyed and every builtin is retuned to the values
-    in BUILTIN_*. What resets is the shape of the game, not what anyone owns.
+    Every custom type is destroyed and every builtin is retuned to the values in
+    BUILTIN_* — including builtins an admin deleted, whose tombstones are lifted
+    here and nowhere else. What resets is the shape of the game, not what anyone
+    owns, with one unavoidable exception: a deleted builtin comes back with its
+    column freshly created, so every group starts it at the default.
 
     Returns the (removed, kept_columns) key lists, where kept_columns names the
     types whose column outlived them on an old SQLite.
@@ -637,6 +737,7 @@ def factory_reset():
             kept.append(key)
         removed.append(key)
     with _lock:
+        _conn.execute("DELETE FROM asset_removed")
         _conn.executemany("INSERT OR REPLACE INTO asset_catalog " + _CATALOG_COLUMNS,
                           _builtin_rows())
         _conn.executemany("INSERT OR REPLACE INTO asset_labels (key, lang, label) "
@@ -644,5 +745,11 @@ def factory_reset():
         _conn.execute("DELETE FROM asset_upgrade_costs")
         _conn.executemany("INSERT INTO asset_upgrade_costs (building, resource, amount) "
                           "VALUES (?, ?, ?)", _builtin_cost_rows())
+        _conn.executemany("INSERT OR REPLACE INTO asset_kind_order (kind, position) "
+                          "VALUES (?, ?)",
+                          [(kind, (i + 1) * 10) for i, kind in enumerate(DEFAULT_KIND_ORDER)])
         _conn.commit()
+    # A builtin that was deleted has a catalog row again but no column. Without
+    # this the next SELECT over all_keys() raises on the missing column.
+    ensure_columns()
     return removed, kept
