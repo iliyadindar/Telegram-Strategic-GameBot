@@ -72,6 +72,19 @@ Each building can be upgraded through multiple levels. Higher levels produce mor
 - Farm · Animal Farm · Clothes Factory · Bank
 - Military camps and shipyards for each unit type
 
+**Price and yield per level.** A building starts out flat: one upgrade cost and
+one yield that every level shares. Under 🧩 *Assets & units → a building →* 🎚
+**Per-level cost & yield** an admin gives a single level numbers of its own —
+level 7 costing more than level 6, yielding less, or both. Every level nobody
+has touched keeps falling back to the flat values, so tuning one level changes
+exactly one level. ♻️ puts a level back.
+
+**A level ceiling.** 🏁 **Level ceiling** caps how far a building goes — set it
+to 20 and level 20 is the last one anybody can buy. `0` means no ceiling, which
+is how every building ships. Lowering a ceiling never takes away a level a group
+has already paid for; it only stops the next purchase. The upgrade menu shows
+each building as `(3/20)` so the limit is visible before anyone spends anything.
+
 ### World Trade
 
 Lords trade resources with each other across two world-map graphs, entirely through inline buttons:
@@ -79,13 +92,13 @@ Lords trade resources with each other across two world-map graphs, entirely thro
 - **Sea routes** 🚢 — oceans, seas and gulfs connected through straits and canals (Suez, Panama, Hormuz, Bab-el-Mandeb, Malacca…). Chokepoints charge a toll; free-but-long detours exist around the Cape of Good Hope and Cape Horn.
 - **Land routes** 🐫 — Silk-Road regions (Persia, Anatolia, India, China…) linked through tolled passes such as Khyber, Pamir and the Sahara Route.
 - **Route choice** — the bot quotes up to three routes (fastest / toll-free / cheapest) with duration, fees and tolls; the sender picks the trade-off.
-- **Ships & caravans** — sea trades require ships with cargo capacity (locked until delivery); land trades hire caravans.
+- **Ships & caravans** — both are owned units with a per-vehicle cargo capacity, locked for the journey and returned on arrival. A country's caravan count sits in its assets beside its ships, and every capacity is set under ⚙️ *Trade settings → Vehicle capacity and cost*.
 - **Offers & escrow** — goods, vehicles and fees are deducted when the offer is sent; the receiving lord accepts or declines, and declined, cancelled or expired offers are fully refunded.
 - **Live tracking** — a background ticker moves convoys in real time and edits the tracking message at every waypoint ("the shipment passed the Suez Canal — toll paid"), announcing departures and arrivals to the game channel.
 - **Chokepoint ownership** 🪙 — the admin can grant a group ownership of any strait, canal or pass: passage tolls are then paid into that group's treasury, and its own convoys pass free. Tolls on unowned chokepoints are burned.
 - **Admin tuning** — each group's sea/land home location plus every speed, fee, toll and capacity value is editable in-game from the trade admin panel.
 - **An editable map** 🗺 — the world itself is data, not code. From 🗺 *Edit the trade map* an admin can rename any sea, strait or region in all three languages, change what kind of place it is, decide whether countries may be based there, price its toll, and draw entirely new places and routes. Each route carries a **length** (which sets the fee and which route counts as cheapest) and an optional **exact travel time**, so a leg can be retimed without moving any prices. Deleting a place or a route is owner-only and is refused while a convoy still needs it.
-- **Trade photo** 🖼 — an admin can attach a photo to trade messages; the offer card, the live tracking message and the channel announcements are then sent as photos with captions. Bodies longer than Telegram's 1024-character caption limit fall back to plain text automatically.
+- **Trade photos** 🖼 — sea trade and land trade each get their own photo (with a shared one as the fallback); the offer card, the live tracking message and the channel announcements are then sent as photos with captions. Bodies longer than Telegram's 1024-character caption limit fall back to plain text automatically.
 
 ---
 
@@ -102,18 +115,55 @@ Send `/admin` in a group **or** in the bot's private chat to open the dashboard.
 | 🧾 **Action log** | Every admin change — who, what, when — newest first, 10 per page. *(owner only)* 🧹 **Clear the log** empties it behind a confirmation; the wipe leaves no entry of its own, and every admin is messaged instead |
 | 👑 **Admins** | *(owner only)* Promote extra admins by forwarding one of their messages or sending their numeric id, and demote them again. The owner from the configuration is always an admin and cannot be removed |
 | 🧩 **Assets & units** | Add, rename, retune or remove resource, unit and building types — see [Asset Catalog](#-asset-catalog) |
-| ♻️ **Reset a country** | Return one group's resources, troops and buildings to their starting values, behind a confirmation step. Treaties and trade locations are left alone, and the previous values are written to the action log |
-| 🖼 **Trade photo** | Set or clear the photo used on trade messages |
+| ♻️ **Reset a country** | Return one group's resources, troops and buildings to their starting values, behind a confirmation step — one country, or every country at once from the same screen. Treaties and trade locations are left alone, and the previous values are written to the action log |
+| 🖼 **Trade photos** | Set or clear a photo per trade kind — sea, land, or the shared fallback |
+| 🎛 **A country's assets** | Take a type away from one country, give it back, or leave a factory standing but idle |
+| ⛔️ **Open/close the bot** | `/off` closes the game to players and `/on` reopens it; admins keep the panel either way |
 | 🖼 **War photos** | Set or clear separate photos for land and sea campaign announcements |
 | 🌍 **Trade administration** | Home locations, chokepoint owners, trade settings, and 🗺 **Edit the trade map** — see [World Trade](#world-trade) |
 | 🔥 **Factory-reset the catalog** | *(owner only)* Restore every asset type to the values the game shipped with and clear the action log — see [Asset Catalog](#-asset-catalog) |
 | 🎮 **Game menu** | Opens the normal player menu without leaving the panel |
 
+### One country at a time
+
+The catalog says what exists in the game; 🎛 **A country's assets** says what
+exists *for one country*. A landlocked nation has no shipyards, a demilitarised
+one has no army, and a country under sanctions may have its factories standing
+but idle. Two switches, because they answer different questions:
+
+| | What it does |
+|---|---|
+| 🚫 **Does not have** | The type is not part of that country at all — gone from its status message and its upgrade menu, and its buildings stop producing. The stored number is left alone, so giving it back restores the country exactly as it was |
+| ⏸ **Switched off** | A building the country still has, which simply does not run. It stays visible with its level intact and can still be upgraded; it just yields nothing on the weekly cycle |
+
+Nothing is written for a country with no overrides, and ♻️ puts one country back
+to the catalog in a single tap. Destroying a type, or a country, forgets its
+overrides too.
+
+### Closing a route
+
+Not every country has a coast. 🚧 **Open/close a country's trade** closes sea or
+land trade for one country, and it then neither sends nor receives that way: the
+route disappears from its trade menu, and it stops appearing as a destination
+for anybody else. A trade already in flight is left alone — the cargo has to
+arrive. The check runs again at despatch, so closing a route while somebody is
+halfway through loading a convoy stops it rather than letting it sail.
+
+### Statements
+
+A statement is *from* somewhere, so a lord may only issue one inside their own
+country's group chat; sending it to the bot in private is refused. Admins and
+the owner may post from anywhere and are asked which country they are speaking
+for. Nothing reaches the channel until the preview has been confirmed, and there
+is no length limit: a statement past Telegram's 4096 characters is split across
+messages with the attribution on the last one, and a picture with a long caption
+goes out first with the words following it.
+
 ### Appointing lords
 
 Players can no longer register themselves. An admin **replies to the player's message** in the group and sends `/setlord`; the bot verifies the sender is an admin and registers the replied-to user as that group's lord.
 
-`/unsetlord` takes a lordship back. In reply to a player it removes that player; sent on its own in a group it offers to retire the whole group. There is no separate registration record — the row *is* the country — so either form deletes the resources, army and buildings that went with it. Removing one player is admin-level; retiring a group is **owner only** and asks for a button press first. Both refuse while that country still has a trade in flight, because a refund or delivery written to a deleted row is silently lost.
+`/unsetlord` takes a lordship back. In reply to a player it removes that player; sent on its own in a group it offers to retire the whole group. There is no separate registration record — the row *is* the country — but losing the lord no longer loses the country: when the last lord goes, its resources, army, buildings, treaties and home locations are archived and handed to whoever is appointed next. Zeroing a country is the ♻️ **Reset** button's job, and stays a separate, deliberate act. Removing one player is admin-level; retiring a group is **owner only** and asks for a button press first. Both refuse while that country still has a trade in flight, because a refund or delivery written to a deleted row is silently lost.
 
 ### Campaigns and the war channel
 
@@ -261,9 +311,10 @@ BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-en.py
 | Command | Description |
 |---|---|
 | `/setlord` | **Admin only.** Reply to a player's message with this to make them the lord of that group |
-| `/unsetlord` | **Admin only.** Reply to a lord's message to remove them. Sent with no reply it offers to retire the whole group — *owner only*. Either way the country's assets go with it |
+| `/unsetlord` | **Admin only.** Reply to a lord's message to remove them. Sent with no reply it offers to retire the whole group — *owner only*. The country keeps what it owns; the next lord inherits it |
 | `/start` | Open the main menu and start playing — in a group or in private chat |
 | `/admin` | Open the admin dashboard — works in a group or in private chat *(admin only)* |
+| `/on` · `/off` | Open or close the game to players. Admins keep the panel either way *(admin only)* |
 | `panel` / `menu` | The bare word does exactly what `/start` does — no slash needed |
 
 ### Menu Options
@@ -312,6 +363,8 @@ Telegram-Strategic-GameBot/
 ├── asset_catalog.py  # Resources, units and buildings as data: seeding, costs, production
 ├── asset_admin.py    # Panel screens for adding and retuning catalog types
 ├── asset_ui.py       # Player screens: assets, upgrades, weekly production, asset editor
+├── country_assets.py # What one country has, as opposed to what the game has
+├── broadcast.py      # Statements and campaigns: preview, confirm, no length limit
 ├── trade_system.py   # World trade engine shared by all three bots (routing, tolls, live tracking)
 ├── trade_map.py      # The world map as data: places, routes, their names and timings
 ├── trade_map_admin.py# Panel screens for editing the map

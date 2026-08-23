@@ -26,6 +26,7 @@ from telebot import types
 
 import asset_admin
 import asset_catalog as catalog
+import country_assets
 from admin_strings import FEATURES, STRINGS
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,10 @@ def init(bot, conn, owner_id, channel_id, war_channel_id=None, lang='fa', game_m
     catalog.init(conn)
     asset_admin.init(bot, lang, _require_admin, _answer, _show, log, _next_step, _back_row,
                      require_owner=_require_owner)
+    # What one country has, as opposed to what the game has. Wired after the
+    # catalog, because its screens list the catalog's types.
+    country_assets.init(bot, conn, lang, _require_admin, _answer, _show, log, _back_row,
+                        _title, _groups)
 
 
 def _migrate():
@@ -90,6 +95,16 @@ def _migrate():
             action   TEXT NOT NULL,
             target   TEXT DEFAULT '',
             detail   TEXT DEFAULT ''
+        )''')
+        # What a country owned when its last lord was retired. The `users` row
+        # *is* the country, so removing the lord used to destroy the assets with
+        # it and the next lord started from the defaults. Now the row's numbers
+        # are kept here and handed to whoever takes the country on next; the
+        # reset button is what zeroes a country, deliberately.
+        _conn.execute('''CREATE TABLE IF NOT EXISTS country_archive (
+            group_id INTEGER PRIMARY KEY,
+            saved_at INTEGER NOT NULL,
+            data     TEXT NOT NULL
         )''')
         # String-valued settings. trade_config only stores integers, so the
         # photo file_ids need a home of their own.
@@ -259,12 +274,54 @@ def feature_enabled(key):
     return bool(rows[0]['enabled']) if rows else True
 
 
+# The master switch, above every individual feature. /off closes the game for
+# players — the menu and its buttons stop working — while admins keep the panel,
+# so a round can be paused and tidied up without taking the bot down.
+PLAYERS_KEY = 'players_enabled'
+
+
+def players_enabled():
+    """False only after somebody has run /off. Absent means open."""
+    return setting(PLAYERS_KEY, '1') != '0'
+
+
+def set_players_enabled(value):
+    set_setting(PLAYERS_KEY, '1' if value else '0')
+
+
+def open_to(user_id):
+    """Whether this person may use the game right now."""
+    return players_enabled() or is_admin(user_id)
+
+
+def closed_notice():
+    """What to tell a player who opened the menu while the bot is off."""
+    return _t('bot_off')
+
+
 def require_feature(call, key):
     """Guard a callback branch. Answers with an alert and returns False if off."""
+    if not open_to(call.from_user.id):
+        _answer(call, _t('bot_off'), alert=True)
+        return False
     if feature_enabled(key):
         return True
     _answer(call, _t('feature_disabled'), alert=True)
     return False
+
+
+def handle_onoff(message, enable):
+    """/on and /off. Admin-only, and it says so rather than staying silent."""
+    if not is_admin(message.from_user.id):
+        _bot.reply_to(message, _t('not_admin'))
+        return
+    already = players_enabled() == bool(enable)
+    set_players_enabled(enable)
+    if already:
+        _bot.reply_to(message, _t('bot_on_already' if enable else 'bot_off_already'))
+        return
+    log(message.from_user.id, 'bot_switch', '', 'on' if enable else 'off')
+    _bot.reply_to(message, _t('bot_turned_on' if enable else 'bot_turned_off'))
 
 
 def enabled_features():
@@ -383,8 +440,10 @@ def handle_callback(call):
     try:
         parts = call.data.split(':')
         op = parts[1] if len(parts) > 1 else 'home'
-        if op.startswith('cat'):
+        if op.startswith('cat') or op in asset_admin.OPS:
             asset_admin.handle(call, parts)
+        elif op in country_assets.OPS:
+            country_assets.handle(call, parts)
         elif op == 'nop':
             _answer(call)
         elif op == 'home':
@@ -403,6 +462,8 @@ def handle_callback(call):
             _feature_list(call)
         elif op == 'ft':
             _feature_toggle(call, parts[2])
+        elif op == 'ftall':
+            _players_toggle(call)
         elif op == 'log':
             _log_page(call, int(parts[2]))
         elif op == 'adm':
@@ -417,6 +478,10 @@ def handle_callback(call):
             _reset_confirm(call, int(parts[2]))
         elif op == 'rsc':
             _reset_apply(call, int(parts[2]))
+        elif op == 'rsa':
+            _reset_all_confirm(call)
+        elif op == 'rsac':
+            _reset_all_apply(call)
         elif op == 'ulc':
             _unset_group_apply(call, int(parts[2]))
         elif op == 'lgc':
@@ -458,12 +523,15 @@ def open_panel(chat_id, user_id):
 
 def _panel_text():
     features = enabled_features()
-    return _t('panel_title',
+    text = _t('panel_title',
               owner=_user_link(_OWNER),
               admins=len(admin_ids()),
               groups=len(_groups()),
               on=sum(1 for v in features.values() if v),
               total=len(FEATURES))
+    if not players_enabled():
+        text += _t('panel_closed')
+    return text
 
 
 def _panel_markup(user_id):
@@ -474,7 +542,8 @@ def _panel_markup(user_id):
                types.InlineKeyboardButton(_t('btn_features'), callback_data='ap:feat'))
     markup.add(types.InlineKeyboardButton(_t('btn_logs'), callback_data='ap:log:0'),
                types.InlineKeyboardButton(_t('btn_reset'), callback_data='ap:rst:0'))
-    markup.add(types.InlineKeyboardButton(_t('btn_catalog'), callback_data='ap:cat'))
+    markup.add(types.InlineKeyboardButton(_t('btn_catalog'), callback_data='ap:cat'),
+               types.InlineKeyboardButton(_t('btn_country_assets'), callback_data='ap:gas:0'))
     markup.add(types.InlineKeyboardButton(_t('btn_trade_photo'), callback_data='trd:ph'),
                types.InlineKeyboardButton(_t('btn_war_photo'), callback_data='ap:wp'))
     markup.add(types.InlineKeyboardButton(_t('btn_trade_adm'), callback_data='trd:adm'))
@@ -613,6 +682,11 @@ def _group_card(call, gid):
 
 def _feature_markup():
     markup = types.InlineKeyboardMarkup(row_width=1)
+    # The master switch sits above the individual features, because it
+    # overrides all of them.
+    markup.add(types.InlineKeyboardButton(
+        _t('btn_players_on' if players_enabled() else 'btn_players_off'),
+        callback_data='ap:ftall'))
     for key in FEATURES:
         state = _t('feat_on') if feature_enabled(key) else _t('feat_off')
         markup.add(types.InlineKeyboardButton(f"{state} {_t('feat_' + key)}",
@@ -625,6 +699,16 @@ def _feature_list(call):
         return
     _show(call, _t('feat_title'), _feature_markup())
     _answer(call)
+
+
+def _players_toggle(call):
+    if not _require_admin(call):
+        return
+    new_state = not players_enabled()
+    set_players_enabled(new_state)
+    log(call.from_user.id, 'bot_switch', '', 'on' if new_state else 'off')
+    _show(call, _t('feat_title'), _feature_markup())
+    _answer(call, _t('bot_turned_on' if new_state else 'bot_turned_off'))
 
 
 def _feature_toggle(call, key):
@@ -786,7 +870,59 @@ def _reset_pick(call, page):
     for gid in window:
         markup.add(types.InlineKeyboardButton(_title(gid), callback_data=f'ap:rsg:{gid}'))
     _pager(markup, page, pages, 'ap:rst:')
+    # Resetting every country one tap at a time is the same decision made N
+    # times. This is that decision made once — and it is only the countries'
+    # numbers, never the catalog, which is what the factory reset is for.
+    markup.add(types.InlineKeyboardButton(_t('btn_reset_all', n=len(groups)),
+                                          callback_data='ap:rsa'))
     _show(call, _t('reset_pick', p=page + 1, n=pages), _back_row(markup))
+    _answer(call)
+
+
+def _reset_country(gid):
+    """Put one country back to the catalog defaults. Returns what changed."""
+    columns = catalog.all_keys()
+    defaults = catalog.defaults()
+    if not columns:
+        return None
+    rows = _q(f"SELECT {', '.join(columns)} FROM users WHERE group_id=?", (gid,))
+    if not rows:
+        return None
+    before = {c: rows[0][c] for c in columns}
+    # Column names come from the catalog, which validates every key as an identifier.
+    assignments = ', '.join(f"{c}=?" for c in columns)
+    _exec(f"UPDATE users SET {assignments} WHERE group_id=?",
+          tuple(defaults[c] for c in columns) + (gid,))
+    return {c: v for c, v in before.items() if v != defaults[c]}
+
+
+def _reset_all_confirm(call):
+    if not _require_admin(call):
+        return
+    groups = _groups()
+    if not groups:
+        _show(call, _t('no_groups'), _back_row(types.InlineKeyboardMarkup()))
+        _answer(call)
+        return
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(_t('btn_confirm_reset_all'), callback_data='ap:rsac'))
+    _back_row(markup, 'ap:rst:0')
+    _show(call, _t('reset_all_confirm', n=len(groups),
+                   names=_esc('، '.join(_title(gid) for gid in groups))), markup)
+    _answer(call)
+
+
+def _reset_all_apply(call):
+    if not _require_admin(call):
+        return
+    groups = _groups()
+    done = [gid for gid in groups if _reset_country(gid) is not None]
+    if not done:
+        _answer(call, _t('err_generic'), alert=True)
+        return
+    log(call.from_user.id, 'reset_all', str(len(done)),
+        ', '.join(_title(gid) for gid in done))
+    _show(call, _t('reset_all_done', n=len(done)), _back_row(types.InlineKeyboardMarkup()))
     _answer(call)
 
 
@@ -803,22 +939,10 @@ def _reset_confirm(call, gid):
 def _reset_apply(call, gid):
     if not _require_admin(call):
         return
-    columns = catalog.all_keys()
-    defaults = catalog.defaults()
-    if not columns:                       # every type disabled: nothing to reset
+    changed = _reset_country(gid)
+    if changed is None:                   # no such country, or every type disabled
         _answer(call, _t('err_generic'), alert=True)
         return
-    cols = ', '.join(columns)
-    rows = _q(f"SELECT {cols} FROM users WHERE group_id=?", (gid,))
-    if not rows:
-        _answer(call, _t('err_generic'), alert=True)
-        return
-    before = {c: rows[0][c] for c in columns}
-    # Column names come from the catalog, which validates every key as an identifier.
-    assignments = ', '.join(f"{c}=?" for c in columns)
-    _exec(f"UPDATE users SET {assignments} WHERE group_id=?",
-          tuple(defaults[c] for c in columns) + (gid,))
-    changed = {c: v for c, v in before.items() if v != defaults[c]}
     log(call.from_user.id, 'reset_country', _title(gid),
         json.dumps(changed, ensure_ascii=False, separators=(',', ':')))
     _show(call, _t('reset_done', title=_esc(_title(gid))),
@@ -963,12 +1087,96 @@ def _lord_err(exc):
     return STRINGS[_lang].get('unsetlord_err_' + str(exc), _t('err_generic'))
 
 
+# Columns of `users` that are not the country's own numbers and must not be
+# carried across to the next lord.
+_ARCHIVE_SKIP = frozenset({'user_id', 'group_id'})
+
+
+def _country_columns():
+    """Everything about a country worth keeping: assets, treaties, home nodes."""
+    with _lock:
+        return [row[1] for row in _conn.execute("PRAGMA table_info(users)").fetchall()
+                if row[1] not in _ARCHIVE_SKIP]
+
+
+def archive_country(group_id):
+    """Snapshot a country's numbers before its row goes, and return them.
+
+    Called from the one place a country dies. The snapshot replaces any older
+    one: what the next lord should inherit is what the last lord actually left,
+    not the state from two lords ago.
+    """
+    columns = _country_columns()
+    if not columns:
+        return {}
+    rows = _q(f"SELECT {', '.join(columns)} FROM users WHERE group_id=? LIMIT 1", (group_id,))
+    if not rows:
+        return {}
+    data = dict(rows[0])
+    owned = []
+    try:
+        owned = [r['node_id'] for r in
+                 _q("SELECT node_id FROM chokepoint_owners WHERE group_id=?", (group_id,))]
+    except sqlite3.OperationalError:
+        pass  # trade_system's table; absent when the panel runs alone
+    data['__chokepoints__'] = owned
+    _exec("INSERT OR REPLACE INTO country_archive (group_id, saved_at, data) VALUES (?, ?, ?)",
+          (group_id, int(time.time()),
+           json.dumps(data, ensure_ascii=False, separators=(',', ':'))))
+    return data
+
+
+def archived_country(group_id):
+    """The snapshot waiting for this group's next lord, or None."""
+    rows = _q("SELECT data FROM country_archive WHERE group_id=?", (group_id,))
+    if not rows:
+        return None
+    try:
+        return json.loads(rows[0]['data'])
+    except ValueError:
+        return None
+
+
+def restore_country(group_id):
+    """Give a freshly-appointed lord what the last one left behind.
+
+    Consumed on use: a country is inherited once. A column the catalog has
+    dropped since the snapshot is skipped rather than restored, because there is
+    nowhere left to put it.
+    """
+    data = archived_country(group_id)
+    _exec("DELETE FROM country_archive WHERE group_id=?", (group_id,))
+    if not data:
+        return {}
+    chokepoints = data.pop('__chokepoints__', [])
+    live = set(_country_columns())
+    restored = {c: v for c, v in data.items() if c in live}
+    if restored:
+        columns = list(restored)
+        assignments = ', '.join(f"{c}=?" for c in columns)
+        _exec(f"UPDATE users SET {assignments} WHERE group_id=?",
+              tuple(restored[c] for c in columns) + (group_id,))
+    # Only straits nobody has been given in the meantime: handing back one that
+    # now belongs to another country would take it off them without a word.
+    for nid in chokepoints:
+        try:
+            _exec("INSERT OR IGNORE INTO chokepoint_owners (node_id, group_id) VALUES (?, ?)",
+                  (nid, group_id))
+        except sqlite3.OperationalError:
+            break
+    return restored
+
+
 def _drop_lords(group_id, user_id=None):
     """Delete a group's lord row(s) and return the user ids that went.
 
     The single path by which a country dies. `user_id` narrows it to one
     player; without it the whole group goes. Raises LordError rather than
     deleting anything when the group has a trade in flight.
+
+    Losing the last lord no longer loses the country: the row's numbers are
+    archived on the way out and handed to the next lord. Zeroing a country is
+    the reset button's job, and stays a separate, deliberate act.
     """
     where, params = "group_id=?", (group_id,)
     if user_id is not None:
@@ -979,15 +1187,24 @@ def _drop_lords(group_id, user_id=None):
     if group_id in _groups_in_trade():
         raise LordError('in_trade')
     with _lock:
+        remaining = _conn.execute(
+            f"SELECT COUNT(*) FROM users WHERE group_id=? AND user_id NOT IN "
+            f"({', '.join('?' * len(rows))})",
+            (group_id,) + tuple(r['user_id'] for r in rows)).fetchone()[0]
+        # Only the last lord leaving ends the country, and only then is there
+        # anything to keep: with a co-lord still in place the row survives.
+        if not remaining:
+            archive_country(group_id)
         _conn.execute(f"DELETE FROM users WHERE {where}", params)
         # A chokepoint whose owner no longer exists would keep charging tolls
-        # on behalf of a country that is gone — but only the last lord leaving
-        # ends the country, so a co-lord's removal leaves ownership alone.
-        if not _conn.execute("SELECT 1 FROM users WHERE group_id=?", (group_id,)).fetchone():
+        # on behalf of a country that is gone. The archive remembers which ones
+        # they were, so the next lord gets them back.
+        if not remaining:
             try:
                 _conn.execute("DELETE FROM chokepoint_owners WHERE group_id=?", (group_id,))
             except sqlite3.OperationalError:
                 pass  # trade_system's table; absent when the panel runs alone
+            _conn.execute("DELETE FROM country_assets WHERE group_id=?", (group_id,))
         _conn.commit()
     return [row['user_id'] for row in rows]
 
@@ -1016,9 +1233,17 @@ def handle_setlord(message):
     if _q("SELECT 1 FROM users WHERE user_id=? AND group_id=?", (target.id, group_id)):
         _bot.reply_to(message, _t('setlord_already', u=_user_link(target.id)), parse_mode='HTML')
         return
+    # A country with no lord left keeps its numbers in the archive. Whoever is
+    # appointed next inherits them, rather than starting the country over.
+    first_lord = not _q("SELECT 1 FROM users WHERE group_id=?", (group_id,))
     _exec("INSERT OR IGNORE INTO users (user_id, group_id) VALUES (?, ?)", (target.id, group_id))
+    restored = restore_country(group_id) if first_lord else {}
     log(message.from_user.id, 'lord_assign', _title(group_id), str(target.id))
-    _bot.reply_to(message, _t('setlord_done', u=_user_link(target.id)), parse_mode='HTML')
+    text = _t('setlord_done', u=_user_link(target.id))
+    if restored:
+        log(message.from_user.id, 'country_restore', _title(group_id), str(len(restored)))
+        text += _t('setlord_restored')
+    _bot.reply_to(message, text, parse_mode='HTML')
 
 
 def handle_unsetlord(message):

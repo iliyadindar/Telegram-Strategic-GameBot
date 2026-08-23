@@ -5,9 +5,9 @@ import html
 
 import admin_panel
 import asset_catalog
+import broadcast
 import asset_ui
 import bot_config
-import trade_map_admin
 import trade_system
 
 # Credentials are never hardcoded: they come from the environment, from
@@ -45,6 +45,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS users (
                     small_ships INTEGER DEFAULT 1500,
                     medium_ships INTEGER DEFAULT 1500,
                     large_ships INTEGER DEFAULT 1500,
+                    caravans INTEGER DEFAULT 1500,
                     stone_factory INTEGER DEFAULT 0,
                     wood_factory INTEGER DEFAULT 0,
                     iron_factory INTEGER DEFAULT 0,
@@ -93,12 +94,16 @@ admin_panel.set_lord_guard(trade_system.active_trade_groups)
 asset_ui.init(bot, conn, lang='tr', audit=admin_panel.log,
               is_admin=admin_panel.is_admin)
 
-# 'trd:' callbacks that belong to the trade admin screens. They stay reachable
-# even when the player-facing trade feature is switched off.
+# Statements and military campaigns: one implementation for all three
+# languages, with a confirmation step and no length limit on a statement.
+broadcast.init(bot, conn, CHANNEL_ID, WAR_CHANNEL_ID, lang='tr',
+               is_admin=admin_panel.is_admin, notify_admins=admin_panel.notify_admins,
+               war_photo=admin_panel.war_photo, audit=admin_panel.log)
+
 # Trade admin screens stay reachable even when the player-facing trade feature
-# is switched off. The map editor's ops come from the module that owns them.
-TRADE_ADMIN_OPS = (('adm', 'hm', 'hg', 'h', 'cfg', 'ck', 'ow', 'on', 'og', 'ph', 'phs', 'phc')
-                   + tuple(trade_map_admin.OPS))
+# is switched off. The list lives in trade_system, which owns those screens, so
+# adding one there cannot leave this file quietly behind.
+TRADE_ADMIN_OPS = trade_system.ADMIN_OPS
 
 
 def escape_html(text):
@@ -107,12 +112,6 @@ def escape_html(text):
 
 
 # Sefer türü için görünen etiketler (dahili değer 'land' / 'sea' olarak kalır).
-attack_type_labels = {
-    'land': 'Kara',
-    'sea': 'Deniz',
-}
-
-
 @bot.message_handler(commands=['setlord'])
 def set_lord(message):
     # A lord is appointed by an admin replying to that player's message.
@@ -124,6 +123,17 @@ def unset_lord(message):
     # In reply: that player loses the lordship. On its own: the whole group,
     # owner only, behind a confirmation button.
     admin_panel.handle_unsetlord(message)
+
+
+@bot.message_handler(commands=['on'])
+def open_bot(message):
+    # The master switch. Players lose the menu; admins keep the panel.
+    admin_panel.handle_onoff(message, True)
+
+
+@bot.message_handler(commands=['off'])
+def close_bot(message):
+    admin_panel.handle_onoff(message, False)
 
 
 @bot.message_handler(commands=['admin'])
@@ -151,6 +161,9 @@ def send_main_menu(chat_id, user_id):
     if not cursor.fetchone():
         bot.send_message(chat_id, "Henüz lord değilsiniz. Bir yöneticinin gruptaki mesajınızı "
                                   "yanıtlayıp /setlord göndermesi gerekir.")
+        return
+    if not admin_panel.open_to(user_id):
+        bot.send_message(chat_id, admin_panel.closed_notice())
         return
     markup = types.InlineKeyboardMarkup(row_width=2)
     for data, label, feature in MENU_BUTTONS:
@@ -274,111 +287,6 @@ def process_treaty_confirmation(call):
     bot.answer_callback_query(call.id, 'Antlaşma sonucu kaydedildi')
 
 
-def ask_for_statement(message, user_id):
-    bot.send_message(message.chat.id, "<b>Lütfen bildirinizi gönderin </b>", parse_mode='HTML')
-    bot.register_next_step_handler(message, lambda msg: send_statement(msg, user_id))
-
-
-def send_statement(message, user_id):
-    user_info = bot.get_chat(user_id)
-    user_link = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
-    group_name = escape_html(message.chat.title) if message.chat.title else "Bilinmiyor"
-    bot.send_message(message.chat.id, "Bildiriniz <b>gönderildi</b>", parse_mode='HTML')
-
-    additional_caption = f"\n\n🌍 {group_name} grubundan\n👤 Komutan: {user_link}"
-
-    if message.text:
-        bot.send_message(CHANNEL_ID, f"{escape_html(message.text)}{additional_caption}", parse_mode='HTML')
-    elif message.photo:
-        original_caption = escape_html(message.caption) if message.caption else " "
-        bot.send_photo(CHANNEL_ID, message.photo[-1].file_id, caption=f"{original_caption}{additional_caption}",
-                       parse_mode='HTML')
-    elif message.video:
-        original_caption = escape_html(message.caption) if message.caption else " "
-        bot.send_video(CHANNEL_ID, message.video.file_id, caption=f"{original_caption}{additional_caption}",
-                       parse_mode='HTML')
-    elif message.document:
-        original_caption = escape_html(message.caption) if message.caption else " "
-        bot.send_document(CHANNEL_ID, message.document.file_id, caption=f"{original_caption}{additional_caption}",
-                          parse_mode='HTML')
-    elif message.audio:
-        original_caption = escape_html(message.caption) if message.caption else " "
-        bot.send_audio(CHANNEL_ID, message.audio.file_id, caption=f"{original_caption}{additional_caption}",
-                       parse_mode='HTML')
-    elif message.voice:
-        original_caption = escape_html(message.caption) if message.caption else " "
-        bot.send_voice(CHANNEL_ID, message.voice.file_id, caption=f"{original_caption}{additional_caption}",
-                       parse_mode='HTML')
-
-
-def ask_for_attack_type(message):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(types.InlineKeyboardButton("Kara", callback_data='attack_type_land'))
-    markup.add(types.InlineKeyboardButton("Deniz", callback_data='attack_type_sea'))
-    #markup.add(types.InlineKeyboardButton("Hava", callback_data='attack_type_air'))
-    bot.send_message(message.chat.id, "Sefer türünü seçin:", reply_markup=markup)
-
-
-def handle_attack_type_selection(call):
-    user_id = call.from_user.id
-    attack_type = call.data.split('_')[2]
-    # Per-user, not a module global: two campaigns can be in flight at once.
-    user_context[user_id] = {'attack_type': attack_type}
-    bot.send_message(call.message.chat.id, "Lütfen ordu bilgilerinizi girin:")
-    bot.register_next_step_handler(call.message, lambda msg: get_attack_origin(msg, user_id))
-
-
-def get_attack_origin(message, user_id):
-    attack_details = escape_html(message.text)
-    user_context[user_id]['attack_details'] = attack_details
-    bot.send_message(message.chat.id, "Seferin çıkış noktasını girin:")
-    bot.register_next_step_handler(message, lambda msg: get_attack_destination(msg, user_id))
-
-
-def get_attack_destination(message, user_id):
-    attack_origin = escape_html(message.text)
-    user_context[user_id]['attack_origin'] = attack_origin
-    bot.send_message(message.chat.id, "Seferin hedefini girin:")
-    bot.register_next_step_handler(message, lambda msg: get_attack_time(msg, user_id))
-
-
-def get_attack_time(message, user_id):
-    attack_destination = escape_html(message.text)
-    user_context[user_id]['attack_destination'] = attack_destination
-    bot.send_message(message.chat.id, "Varış zamanını girin:")
-    bot.register_next_step_handler(message, lambda msg: send_attack_details(msg, user_id))
-
-
-def send_attack_details(message, user_id):
-    attack_time = escape_html(message.text)
-    attack_type = user_context[user_id]['attack_type']
-    attack_details = user_context[user_id]['attack_details']
-    attack_origin = user_context[user_id]['attack_origin']
-    attack_destination = user_context[user_id]['attack_destination']
-    attack_type_label = attack_type_labels.get(attack_type, attack_type)
-    # Get user info
-    user_info = bot.get_chat(user_id)
-    user_name = f"<a href='tg://user?id={user_id}'>{escape_html(user_info.first_name)}</a>"
-
-    headline = (f"🔖 {attack_origin} ordusu {attack_destination} hedefine doğru harekete geçti "
-                f"({attack_type_label})\n\n⚜️ Komutan: {user_name}\n"
-                f"⌛️ Varış zamanı: {attack_time}")
-
-    # Troop numbers stay private: the owner and every bot admin get the
-    # full report, the public post below carries none of it.
-    admin_panel.notify_admins(f"{headline}\n📝 Detaylar: {attack_details}", parse_mode='HTML')
-
-    # Public announcement in the war channel — flavour only.
-    war_photo = admin_panel.war_photo(attack_type)
-    if war_photo:
-        bot.send_photo(WAR_CHANNEL_ID, war_photo, caption=headline, parse_mode='HTML')
-    else:
-        bot.send_message(WAR_CHANNEL_ID, headline, parse_mode='HTML')
-
-    user_context.pop(user_id, None)
-    bot.send_message(message.chat.id, "Sefer bilgileri gönderildi.")
-
-
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     if call.data.startswith('ap:'):
@@ -390,6 +298,13 @@ def callback_query(call):
         if not call.data.startswith('ag:ed') and not admin_panel.require_feature(call, feature):
             return
         asset_ui.handle_callback(call)
+        return
+    if call.data.startswith('bc:'):
+        # Statements and campaigns, both behind their own feature toggle.
+        feature = 'statement' if call.data.startswith('bc:s') else 'attack'
+        if not admin_panel.require_feature(call, feature):
+            return
+        broadcast.handle_callback(call)
         return
     if call.data.startswith('trd:'):
         op = call.data.split(':')[1] if ':' in call.data else ''
@@ -438,18 +353,16 @@ def callback_query(call):
         elif len(data_parts) == 3 and data_parts[1] == 'send':
             group_id = int(data_parts[2])
             send_private_message(call, group_id)
-    elif data_parts[0] == 'attack':
+    elif call.data == 'attack':
         if not admin_panel.require_feature(call, 'attack'):
             return
-        if len(data_parts) == 1:
-            ask_for_attack_type(call.message)
-        else:
-            handle_attack_type_selection(call)
-    elif data_parts[0] == 'statement':
+        bot.answer_callback_query(call.id)
+        broadcast.start_campaign(call.message, user_id)
+    elif call.data == 'statement':
         if not admin_panel.require_feature(call, 'statement'):
             return
-        if len(data_parts) == 1:
-            ask_for_statement(call.message, user_id)
+        bot.answer_callback_query(call.id)
+        broadcast.start_statement(call.message, user_id)
     elif data_parts[0] == 'treaty':
         if not admin_panel.require_feature(call, 'treaty'):
             return

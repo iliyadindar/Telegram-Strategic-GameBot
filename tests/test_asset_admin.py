@@ -405,3 +405,92 @@ class DeleteScreenTest(CatalogScreenTest):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LevelScreenTest(CatalogScreenTest):
+    """The per-level cost/yield screens and the level ceiling."""
+
+    def test_a_building_entry_offers_the_level_screens(self):
+        self.tap('ap:cate:bank')
+        keyboard = self.bot.last_keyboard()
+        self.assertIn('ap:clv:bank', keyboard)
+        self.assertIn('ap:cmax:bank', keyboard)
+
+    def test_a_resource_entry_does_not(self):
+        self.tap('ap:cate:gold')
+        keyboard = self.bot.last_keyboard()
+        self.assertNotIn('ap:clv:gold', keyboard)
+        self.assertNotIn('ap:cmax:gold', keyboard)
+
+    def test_the_level_list_starts_empty(self):
+        self.tap('ap:clv:bank')
+        self.assertIn('Hand-tuned levels: none', self.screen())
+
+    def test_opening_a_level_seeds_it_from_the_flat_cost(self):
+        self.tap('ap:clva:bank')
+        self.feed('7')
+        self.assertEqual(catalog.level_costs('bank', 7), catalog.BUILTIN_COSTS['bank'])
+        self.assertIn('level 7', self.screen())
+
+    def test_a_level_below_one_is_re_asked(self):
+        self.tap('ap:clva:bank')
+        self.feed('0')
+        self.assertEqual(catalog.tuned_cost_levels('bank'), ())
+        self.feed('3')
+        self.assertEqual(catalog.tuned_cost_levels('bank'), (3,))
+
+    def test_setting_one_resource_at_one_level(self):
+        catalog.seed_level_cost('bank', 4)
+        index = list(catalog.keys('resource')).index('gold')
+        self.tap(f'ap:clvc:bank:4:{index}')
+        self.feed('8888')
+        self.assertEqual(catalog.upgrade_cost('bank', 4)['gold'], 8888)
+        self.assertEqual(catalog.upgrade_cost('bank', 5), catalog.upgrade_cost('bank'))
+
+    def test_setting_one_levels_yield(self):
+        self.tap('ap:clvo:bank:6')
+        self.feed('4321')
+        self.assertEqual(catalog.level_output('bank', 6), 4321)
+        self.assertEqual(catalog.level_output('bank', 5), catalog.entry('bank')['output'])
+
+    def test_clearing_a_level_drops_both_its_cost_and_its_yield(self):
+        catalog.seed_level_cost('bank', 2)
+        catalog.set_level_output('bank', 2, 10)
+        self.tap('ap:clvd:bank:2')
+        self.assertEqual(catalog.tuned_cost_levels('bank'), ())
+        self.assertEqual(catalog.tuned_output_levels('bank'), ())
+
+    def test_setting_the_level_ceiling(self):
+        self.tap('ap:cmax:bank')
+        self.feed('20')
+        self.assertEqual(catalog.max_level('bank'), 20)
+        self.assertIn('20', self.screen())
+
+    def test_zero_lifts_the_ceiling(self):
+        catalog.set_max_level('bank', 20)
+        self.tap('ap:cmax:bank')
+        self.feed('0')
+        self.assertEqual(catalog.max_level('bank'), 0)
+
+    def test_the_entry_screen_reports_the_ceiling_and_the_tuned_levels(self):
+        catalog.set_max_level('bank', 15)
+        catalog.set_level_output('bank', 3, 10)
+        self.tap('ap:cate:bank')
+        text = self.screen()
+        self.assertIn('Level ceiling: 15', text)
+        self.assertIn('Hand-tuned levels: 3', text)
+
+    def test_level_screens_are_admin_only(self):
+        self.tap('ap:clv:bank', user_id=PLAYER)
+        _, text, alert = self.bot.last_answer()
+        self.assertTrue(alert)
+        self.assertIn('not an admin', text)
+
+    def test_every_level_callback_fits_telegrams_budget(self):
+        long_key = 'a' * 31
+        catalog.add(long_key, 'building', {'en': 'Long'}, produces='gold', output=5)
+        self.tap(f'ap:clv:{long_key}')
+        self.tap(f'ap:clva:{long_key}')
+        self.feed('999')
+        for data in self.bot.last_keyboard():
+            self.assertLessEqual(len(data.encode('utf-8')), 64, data)

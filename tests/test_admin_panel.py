@@ -753,3 +753,155 @@ class StringsIntegrityTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CountryArchiveTest(UnsetLordTest):
+    """Item 17: retiring a lord no longer destroys what the country owned."""
+
+    def wealth(self, group_id=GROUP_A):
+        return self.conn.execute("SELECT money, gold, bank FROM users WHERE group_id=?",
+                                 (group_id,)).fetchone()
+
+    def enrich(self, group_id=GROUP_A):
+        self.conn.execute("UPDATE users SET money=99999, gold=4242, bank=7, "
+                          "home_sea='sue', treaties='pact of steel' WHERE group_id=?",
+                          (group_id,))
+        self.conn.commit()
+
+    def appoint(self, user_id, group_id=GROUP_A):
+        admin_panel.handle_setlord(
+            Message(Chat(group_id), User(OWNER), text='/setlord',
+                    reply_to_message=Message(Chat(group_id), User(user_id))))
+
+    def test_the_numbers_are_archived_when_the_last_lord_goes(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        saved = admin_panel.archived_country(GROUP_A)
+        self.assertEqual(saved['money'], 99999)
+        self.assertEqual(saved['gold'], 4242)
+
+    def test_the_next_lord_inherits_them(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.appoint(HELPER)
+        self.assertEqual(tuple(self.wealth()), (99999, 4242, 7))
+
+    def test_treaties_and_home_nodes_come_back_too(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.appoint(HELPER)
+        row = self.conn.execute("SELECT treaties, home_sea FROM users WHERE group_id=?",
+                                (GROUP_A,)).fetchone()
+        self.assertEqual(row[0], 'pact of steel')
+        self.assertEqual(row[1], 'sue')
+
+    def test_a_country_is_inherited_once(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.appoint(HELPER)
+        self.assertIsNone(admin_panel.archived_country(GROUP_A))
+
+    def test_a_co_lord_leaving_archives_nothing(self):
+        add_group(self.conn, HELPER, GROUP_A)
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertIsNone(admin_panel.archived_country(GROUP_A))
+        # the country is still standing, untouched
+        self.assertEqual(tuple(self.wealth()), (99999, 4242, 7))
+
+    def test_retiring_the_whole_group_archives_it(self):
+        self.enrich()
+        admin_panel.handle_callback(self.call(f'ap:ulc:{GROUP_A}'))
+        self.assertEqual(admin_panel.archived_country(GROUP_A)['money'], 99999)
+
+    def test_a_second_lord_joining_a_live_country_inherits_nothing(self):
+        # The country never died, so there is no archive to hand over and
+        # nothing is restored on top of what it already has.
+        self.enrich()
+        self.appoint(HELPER)
+        self.assertIsNone(admin_panel.archived_country(GROUP_A))
+        self.assertNotIn('country_restore', [e['action'] for e in admin_panel.recent_log()])
+
+    def test_chokepoints_come_back_if_still_unowned(self):
+        self.own('sue')
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.assertEqual(self.owners(), [])
+        self.appoint(HELPER)
+        self.assertEqual(self.owners(), ['sue'])
+
+    def test_a_chokepoint_given_away_meanwhile_is_not_taken_back(self):
+        self.own('sue')
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.own('sue', GROUP_B)
+        self.appoint(HELPER)
+        owner = self.conn.execute("SELECT group_id FROM chokepoint_owners WHERE node_id='sue'"
+                                  ).fetchone()[0]
+        self.assertEqual(owner, GROUP_B)
+
+    def test_the_reset_button_is_what_zeroes_a_country(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.appoint(HELPER)
+        admin_panel.handle_callback(self.call(f'ap:rsc:{GROUP_A}'))
+        self.assertEqual(tuple(self.wealth()),
+                         (catalog.defaults()['money'], catalog.defaults()['gold'], 0))
+
+    def test_a_type_deleted_meanwhile_is_simply_skipped(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        catalog.remove('gold')
+        self.appoint(HELPER)                 # must not raise on the missing column
+        self.assertEqual(self.conn.execute(
+            "SELECT money FROM users WHERE group_id=?", (GROUP_A,)).fetchone()[0], 99999)
+
+    def test_the_handover_is_logged(self):
+        self.enrich()
+        admin_panel.handle_unsetlord(self.command(OWNER, User(PLAYER)))
+        self.appoint(HELPER)
+        actions = [e['action'] for e in admin_panel.recent_log()]
+        self.assertIn('country_restore', actions)
+
+
+class ResetAllTest(PanelTestCase):
+    """Items 7/8: one button that puts every country back, and nothing else."""
+
+    def setUp(self):
+        super().setUp()
+        add_group(self.conn, PLAYER, GROUP_A)
+        add_group(self.conn, HELPER, GROUP_B)
+        self.conn.execute("UPDATE users SET money=1, gold=2, bank=3")
+        self.conn.commit()
+
+    def money(self, group_id):
+        return self.conn.execute("SELECT money FROM users WHERE group_id=?",
+                                 (group_id,)).fetchone()[0]
+
+    def test_the_picker_offers_a_restore_all_button(self):
+        admin_panel.handle_callback(self.call('ap:rst:0'))
+        self.assertIn('ap:rsa', self.bot.last_keyboard())
+
+    def test_the_confirm_screen_names_every_country(self):
+        admin_panel.handle_callback(self.call('ap:rsa'))
+        screen = self.bot.edits[-1][2]
+        self.assertIn('Persia', screen)
+        self.assertIn('Rome', screen)
+
+    def test_applying_it_restores_both_countries(self):
+        admin_panel.handle_callback(self.call('ap:rsac'))
+        self.assertEqual(self.money(GROUP_A), catalog.defaults()['money'])
+        self.assertEqual(self.money(GROUP_B), catalog.defaults()['money'])
+
+    def test_it_leaves_the_catalog_alone(self):
+        catalog.add('spice', 'resource', {'en': 'Spice'}, default_value=5)
+        admin_panel.handle_callback(self.call('ap:rsac'))
+        self.assertIsNotNone(catalog.entry('spice'))
+
+    def test_it_is_logged_once_with_the_count(self):
+        admin_panel.handle_callback(self.call('ap:rsac'))
+        entry = admin_panel.recent_log()[0]
+        self.assertEqual(entry['action'], 'reset_all')
+        self.assertEqual(entry['target'], '2')
+
+    def test_it_is_admin_only(self):
+        admin_panel.handle_callback(self.call('ap:rsac', user_id=PLAYER))
+        self.assertEqual(self.money(GROUP_A), 1)

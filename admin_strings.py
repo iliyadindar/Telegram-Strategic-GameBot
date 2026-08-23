@@ -19,14 +19,18 @@ FEATURES = ('assets', 'upgrade', 'statement', 'private_message', 'treaty',
 ACTIONS = ('asset_edit', 'feature_toggle', 'weekly_update', 'reset_country', 'lord_assign',
            'lord_unassign', 'group_unassign',
            'admin_add', 'admin_remove', 'trade_photo', 'war_photo',
-           'trade_config', 'chokepoint_owner', 'group_home',
-           'asset_add', 'asset_type_edit', 'asset_hide', 'asset_cost', 'asset_kind_order')
+           'reset_all', 'country_restore', 'country_asset', 'bot_switch',
+           'statement', 'campaign',
+           'trade_config', 'chokepoint_owner', 'group_home', 'trade_mode',
+           'asset_add', 'asset_type_edit', 'asset_hide', 'asset_cost', 'asset_kind_order',
+           'asset_level')
 
 # CatalogError codes that get their own message; anything else falls back to
 # 'err_generic'. Kept next to the strings so the two stay in step.
 CATALOG_ERRORS = ('bad_key', 'exists', 'reserved', 'column_exists', 'bad_kind', 'engine_key',
                   'bad_produces', 'not_a_building', 'not_a_resource', 'bad_resource', 'unknown',
-                  'in_transit', 'guard_unavailable', 'bad_direction')
+                  'in_transit', 'guard_unavailable', 'bad_direction', 'bad_level',
+                  'bad_output')
 
 STRINGS = {
     'fa': {
@@ -73,6 +77,17 @@ STRINGS = {
         'sec_building': "🏭 ساختمان‌ها:",
         'unset': "تعیین نشده",
         'nobody': "ندارد",
+        'bot_off': "⛔️ ربات موقتاً برای بازیکنان بسته است. با مدیریت تماس بگیرید.",
+        'bot_turned_on': "✅ ربات برای بازیکنان باز شد.",
+        'bot_turned_off': "⛔️ ربات برای بازیکنان بسته شد. پنل مدیریت همچنان کار می‌کند.",
+        'bot_on_already': "ربات از قبل باز بود.",
+        'bot_off_already': "ربات از قبل بسته بود.",
+        'btn_players_on': "🟢 ربات برای بازیکنان باز است — برای بستن بزنید",
+        'btn_players_off': "⛔️ ربات برای بازیکنان بسته است — برای باز کردن بزنید",
+        'panel_closed': "\n\n⛔️ ربات برای بازیکنان بسته است (/on برای باز کردن).",
+        'act_bot_switch': "باز/بسته کردن ربات",
+        'act_statement': "بیانیه",
+        'act_campaign': "لشکرکشی",
         'feat_title': "⚙️ بخش‌های ربات — برای تغییر وضعیت روی هر مورد بزنید:",
         'feat_on': "✅",
         'feat_off': "❌",
@@ -102,6 +117,7 @@ STRINGS = {
         'act_war_photo': "عکس جنگ",
         'act_trade_config': "تنظیمات تجارت",
         'act_chokepoint_owner': "مالکیت گذرگاه",
+        'act_trade_mode': "باز/بسته کردن تجارت کشور",
         'act_group_home': "موقعیت تجاری گروه",
         'adm_title': "👑 مدیران ربات\n<blockquote>👑 مالک: {owner}</blockquote>\n"
                      "برای حذف روی یک ادمین بزنید:",
@@ -119,6 +135,16 @@ STRINGS = {
                          "معاهدات و موقعیت‌های تجاری دست نخورده باقی می‌مانند. "
                          "این کار قابل بازگشت نیست.",
         'btn_confirm_reset': "✅ بله، بازنشانی کن",
+        'btn_reset_all': "♻️ بازگردانی همه کشورها ({n} کشور)",
+        'btn_confirm_reset_all': "✅ بله، همه را بازگردان",
+        'reset_all_confirm': "♻️ <b>بازگردانی همه کشورها</b>\n<blockquote>دارایی‌ها، ارتش و "
+                             "ساختمان‌های هر {n} کشور به مقدار اولیه برمی‌گردد:\n{names}\n\n"
+                             "این کار فقط اعداد کشورها را صفر می‌کند؛ به فهرست دارایی‌ها و "
+                             "تنظیمات بازی دست نمی‌زند.</blockquote>",
+        'reset_all_done': "♻️ هر {n} کشور به حالت اولیه برگشتند.",
+        'setlord_restored': "\n♻️ دارایی‌های قبلی این کشور به ایشان تحویل داده شد.",
+        'act_reset_all': "بازگردانی همه کشورها",
+        'act_country_restore': "تحویل دارایی به لرد جدید",
         'reset_done': "♻️ دارایی‌های <b>{title}</b> به حالت اولیه بازگشت.",
         'war_photo_title': "🖼 عکس‌های لشکرکشی — برای تنظیم روی هر مورد بزنید:",
         'wp_land': "🐫 عکس لشکرکشی زمینی",
@@ -139,12 +165,14 @@ STRINGS = {
         'unsetlord_not_admin': "فقط ادمین ربات می‌تواند لردی را پس بگیرد.",
         'unsetlord_not_owner': "برای بازنشسته کردن کل گروه باید مالک ربات باشید.",
         'unsetlord_no_lords': "این گروه اصلاً لردی ندارد.",
-        'unsetlord_done': "🚫 لردی {u} پس گرفته شد و دارایی‌های کشورش پاک شد.",
+        'unsetlord_done': "🚫 لردی {u} پس گرفته شد. دارایی‌های کشور محفوظ می‌ماند و به لرد بعدی می‌رسد.",
         'btn_unset_group': "🔥 بله، این گروه بازنشسته شود",
         'unsetlord_group_confirm': "🔥 <b>بازنشستگی «{title}»</b>\n<blockquote>{n} لرد این گروه "
-                                   "و تمام دارایی‌ها، ارتش و ساختمان‌هایشان برای همیشه حذف "
-                                   "می‌شوند.\n\n⚠️ برای برکناری فقط یک نفر، روی پیام او ریپلای "
-                                   "کنید و /unsetlord بزنید.</blockquote>",
+                                   "برداشته می‌شوند، اما دارایی‌ها، ارتش و ساختمان‌های کشور "
+                                   "نگه داشته می‌شوند و به لرد بعدی همین گروه می‌رسند.\n\n"
+                                   "♻️ اگر می‌خواهید همه‌چیز صفر شود، از دکمه «بازنشانی» در "
+                                   "پنل مدیریت استفاده کنید.\n\n⚠️ برای برکناری فقط یک نفر، "
+                                   "روی پیام او ریپلای کنید و /unsetlord بزنید.</blockquote>",
         'unsetlord_group_done': "🔥 «{title}» بازنشسته شد؛ {n} لرد حذف شدند.",
         'unsetlord_err_not_lord': "این کاربر لرد این گروه نیست.",
         'unsetlord_err_no_lords': "این گروه اصلاً لردی ندارد.",
@@ -155,6 +183,31 @@ STRINGS = {
         'act_asset_type_edit': "ویرایش نوع دارایی",
         'act_asset_hide': "حذف نوع دارایی",
         'act_asset_cost': "هزینه ارتقا",
+        'btn_country_assets': "🎛 دارایی هر کشور",
+        'gas_pick': "🎛 دارایی‌های کدام کشور را می‌خواهید تغییر دهید؟ (صفحه {p} از {n})",
+        'gas_marks': " ({off}🚫 {paused}⏸)",
+        'gas_country': "🎛 <b>{g}</b>\n<blockquote>🚫 ندارد: {off}\n⏸ خاموش: {paused}</blockquote>\n"
+                       "«ندارد» یعنی این مورد اصلاً برای این کشور وجود ندارد. «خاموش» یعنی "
+                       "ساختمان سر جایش هست ولی تولید نمی‌کند.",
+        'gas_kind_btn': "{kind} — {n} از {total}",
+        'gas_kind': "🎛 {g} — {kind} (صفحه {p} از {n})\n"
+                    "روی نام هر مورد بزنید تا برای این کشور حذف/اضافه شود.",
+        'gas_none': "هیچ‌کدام",
+        'gas_on': "✅",
+        'gas_off': "🚫",
+        'btn_gas_stop': "⏸ خاموش",
+        'btn_gas_run': "▶️ روشن",
+        'gas_removed': "🚫 «{label}» برای این کشور حذف شد.",
+        'gas_restored': "✅ «{label}» برای این کشور اضافه شد.",
+        'gas_stopped': "⏸ «{label}» خاموش شد؛ دیگر تولید نمی‌کند.",
+        'gas_running': "▶️ «{label}» دوباره روشن شد.",
+        'btn_gas_clear': "♻️ برگرداندن همه‌چیز به حالت عادی",
+        'btn_gas_clear_yes': "✅ بله، همه را برگردان",
+        'gas_clear_confirm': "♻️ همه تغییرهای <b>{g}</b> برداشته شود؟\n<blockquote>{off} مورد "
+                             "حذف‌شده و {paused} ساختمان خاموش دوباره عادی می‌شوند. عددهای کشور "
+                             "دست‌نخورده می‌مانند.</blockquote>",
+        'gas_cleared': "♻️ {n} تغییر برداشته شد.",
+        'act_country_asset': "دارایی یک کشور",
         'btn_catalog': "🧩 دارایی‌ها و واحدها",
         'cat_title': "🧩 فهرست دارایی‌های بازی — یک دسته را انتخاب کنید:\n"
                      "<blockquote>📦 منابع: {resources}\n⚔️ واحدها: {units}\n"
@@ -167,8 +220,9 @@ STRINGS = {
         'btn_cat_add': "➕ افزودن نوع جدید",
         'cat_entry': "🧩 <b>{label}</b>\n<blockquote>🔑 کلید: <code>{key}</code>\n"
                      "📁 دسته: {kind}\n🎁 مقدار اولیه: {default}\n{extra}</blockquote>{note}",
-        'cat_extra_building': "🏭 تولید می‌کند: {produces}\n📈 تولید هر سطح در هفته: {output}\n"
-                              "💸 هزینه ارتقا: {costs}",
+        'cat_extra_building': "🏭 تولید می‌کند: {produces}\n📈 تولید پایه هر سطح در هفته: {output}\n"
+                              "💸 هزینه پایه ارتقا: {costs}\n🏁 سقف سطح: {max}\n"
+                              "🎚 سطح‌های دستی‌شده: {tuned}",
         'cat_extra_resource': "🚢 قابل تجارت: {tradeable}",
         'cat_produces_none': "چیزی تولید نمی‌کند",
         'cat_costs_none': "رایگان",
@@ -184,6 +238,36 @@ STRINGS = {
         'btn_cat_output': "📈 تولید",
         'btn_cat_tradeable': "🚢 قابل تجارت",
         'btn_cat_costs': "💸 هزینه ارتقا",
+        'btn_cat_levels': "🎚 هزینه و بازدهی سطح‌به‌سطح",
+        'btn_cat_max': "🏁 سقف سطح",
+        'btn_cat_level_add': "➕ تنظیم دستی یک سطح",
+        'btn_cat_level': "سطح {level} — {cost} | 📈 {out}",
+        'btn_cat_level_output': "📈 بازدهی این سطح",
+        'btn_cat_level_clear': "♻️ برگرداندن این سطح به حالت پایه",
+        'cat_levels_title': "🎚 <b>{label}</b> — تنظیم سطح‌به‌سطح\n"
+                            "<blockquote>💸 هزینه پایه: {costs}\n📈 بازدهی پایه هر سطح: {output}\n"
+                            "🏁 سقف سطح: {max}\n🎚 سطح‌های دستی‌شده: {tuned}</blockquote>\n"
+                            "هر سطحی که اینجا نباشد از مقدار پایه استفاده می‌کند.",
+        'cat_level_title': "🎚 <b>{label}</b> — سطح {level}\n"
+                           "<blockquote>💸 هزینه این سطح: {cost}\n"
+                           "📈 بازدهی این سطح: {out} ({source})\n"
+                           "🧮 مجموع بازدهی در سطح {level}: {total}</blockquote>\n"
+                           "برای تغییر هزینه روی هر منبع بزنید.",
+        'cat_lvl_inherited': "طبق هزینه پایه",
+        'cat_lvl_output_own': "دستی",
+        'cat_lvl_output_flat': "پایه",
+        'cat_levels_none': "هیچ‌کدام",
+        'cat_max_none': "بدون سقف",
+        'cat_ask_level': "کدام سطح را می‌خواهید دستی تنظیم کنید؟ (عددی بین ۱ تا {max})",
+        'cat_ask_level_cost': "هزینه رسیدن به سطح {level} بر حسب {res} چقدر باشد؟ (صفر یعنی نیازی نیست)",
+        'cat_ask_level_output': "سطح {level} در هر آپ هفتگی چقدر تولید کند؟",
+        'cat_level_cleared': "♻️ سطح {level} به مقدار پایه برگشت.",
+        'cat_ask_max': "بالاترین سطح این ساختمان چند باشد؟ (فعلی: {current} — صفر یعنی بدون سقف، حداکثر {ceiling})",
+        'cat_max_set': "🏁 سقف سطح روی {max} تنظیم شد.",
+        'cat_max_lifted': "🏁 سقف سطح برداشته شد.",
+        'cat_err_bad_level': "شماره سطح معتبر نیست.",
+        'cat_err_bad_output': "مقدار تولید نمی‌تواند منفی باشد.",
+        'act_asset_level': "تنظیم سطح ساختمان",
         'btn_cat_hide': "🗑 حذف از بازی",
         'btn_cat_unhide': "♻️ بازگرداندن به بازی",
         'cat_ask_key': "کلید انگلیسی نوع جدید را بفرستید (حروف کوچک و زیرخط، مثل archers):",
@@ -325,6 +409,17 @@ STRINGS = {
         'sec_building': "🏭 Buildings:",
         'unset': "not set",
         'nobody': "none",
+        'bot_off': "⛔️ The bot is closed to players for now. Please talk to an admin.",
+        'bot_turned_on': "✅ The bot is open to players again.",
+        'bot_turned_off': "⛔️ The bot is closed to players. The admin panel still works.",
+        'bot_on_already': "The bot was already open.",
+        'bot_off_already': "The bot was already closed.",
+        'btn_players_on': "🟢 Open to players — tap to close",
+        'btn_players_off': "⛔️ Closed to players — tap to open",
+        'panel_closed': "\n\n⛔️ The bot is closed to players (/on to reopen).",
+        'act_bot_switch': "bot opened/closed",
+        'act_statement': "statement",
+        'act_campaign': "campaign",
         'feat_title': "⚙️ Bot sections — tap one to toggle it:",
         'feat_on': "✅",
         'feat_off': "❌",
@@ -354,6 +449,7 @@ STRINGS = {
         'act_war_photo': "war photo",
         'act_trade_config': "trade setting",
         'act_chokepoint_owner': "chokepoint owner",
+        'act_trade_mode': "country trade opened/closed",
         'act_group_home': "group trade location",
         'adm_title': "👑 Bot admins\n<blockquote>👑 Owner: {owner}</blockquote>\n"
                      "Tap an admin to remove them:",
@@ -371,6 +467,16 @@ STRINGS = {
                          "Treaties and trade locations are left untouched. "
                          "This cannot be undone.",
         'btn_confirm_reset': "✅ Yes, reset it",
+        'btn_reset_all': "♻️ Restore every country ({n})",
+        'btn_confirm_reset_all': "✅ Yes, restore them all",
+        'reset_all_confirm': "♻️ <b>Restore every country</b>\n<blockquote>The resources, units "
+                             "and buildings of all {n} countries go back to their starting "
+                             "values:\n{names}\n\nThis only zeroes the countries' numbers; the "
+                             "asset catalog and the game settings are untouched.</blockquote>",
+        'reset_all_done': "♻️ All {n} countries are back to their initial state.",
+        'setlord_restored': "\n♻️ The country's previous assets were handed over to them.",
+        'act_reset_all': "every country restored",
+        'act_country_restore': "country handed to a new lord",
         'reset_done': "♻️ The assets of <b>{title}</b> were reset to their initial values.",
         'war_photo_title': "🖼 Campaign photos — tap one to set it:",
         'wp_land': "🐫 Land campaign photo",
@@ -391,12 +497,14 @@ STRINGS = {
         'unsetlord_not_admin': "Only a bot admin can take a lordship back.",
         'unsetlord_not_owner': "Retiring a whole group is for the bot owner only.",
         'unsetlord_no_lords': "This group has no lord to remove.",
-        'unsetlord_done': "🚫 {u} is no longer a lord; their country's assets are gone.",
+        'unsetlord_done': "🚫 {u} is no longer a lord. The country keeps what it owns; the next lord inherits it.",
         'btn_unset_group': "🔥 Yes, retire this group",
-        'unsetlord_group_confirm': "🔥 <b>Retire “{title}”</b>\n<blockquote>Its {n} lord(s) and "
-                                   "every resource, unit and building they hold will be deleted "
-                                   "for good.\n\n⚠️ To remove just one person, reply to their "
-                                   "message with /unsetlord instead.</blockquote>",
+        'unsetlord_group_confirm': "🔥 <b>Retire “{title}”</b>\n<blockquote>Its {n} lord(s) are "
+                                   "removed, but the country keeps every resource, unit and "
+                                   "building — the next lord of this group inherits them.\n\n"
+                                   "♻️ To zero everything instead, use the Reset button in the "
+                                   "admin panel.\n\n⚠️ To remove just one person, reply to "
+                                   "their message with /unsetlord instead.</blockquote>",
         'unsetlord_group_done': "🔥 “{title}” has been retired; {n} lord(s) removed.",
         'unsetlord_err_not_lord': "That user is not a lord of this group.",
         'unsetlord_err_no_lords': "This group has no lord to remove.",
@@ -408,6 +516,33 @@ STRINGS = {
         'act_asset_type_edit': "asset type edited",
         'act_asset_hide': "asset type removed",
         'act_asset_cost': "upgrade cost",
+        'btn_country_assets': "🎛 A country's assets",
+        'gas_pick': "🎛 Which country's assets do you want to change? (page {p} of {n})",
+        'gas_marks': " ({off}🚫 {paused}⏸)",
+        'gas_country': "🎛 <b>{g}</b>\n<blockquote>🚫 Does not have: {off}\n⏸ Switched off: "
+                       "{paused}</blockquote>\n"
+                       "\"Does not have\" means the type does not exist for this country at "
+                       "all. \"Switched off\" means the building is still there but produces "
+                       "nothing.",
+        'gas_kind_btn': "{kind} — {n} of {total}",
+        'gas_kind': "🎛 {g} — {kind} (page {p} of {n})\n"
+                    "Tap a name to take it away from this country or give it back.",
+        'gas_none': "none",
+        'gas_on': "✅",
+        'gas_off': "🚫",
+        'btn_gas_stop': "⏸ Stop",
+        'btn_gas_run': "▶️ Start",
+        'gas_removed': "🚫 “{label}” was taken away from this country.",
+        'gas_restored': "✅ “{label}” was given back to this country.",
+        'gas_stopped': "⏸ “{label}” is switched off; it produces nothing now.",
+        'gas_running': "▶️ “{label}” is running again.",
+        'btn_gas_clear': "♻️ Put everything back to normal",
+        'btn_gas_clear_yes': "✅ Yes, put it all back",
+        'gas_clear_confirm': "♻️ Clear every override on <b>{g}</b>?\n<blockquote>{off} removed "
+                             "type(s) and {paused} switched-off building(s) go back to normal. "
+                             "The country's numbers are untouched.</blockquote>",
+        'gas_cleared': "♻️ {n} override(s) cleared.",
+        'act_country_asset': "a country's assets",
         'btn_catalog': "🧩 Assets & units",
         'cat_title': "🧩 The game's asset catalog — pick a category:\n"
                      "<blockquote>📦 Resources: {resources}\n⚔️ Units: {units}\n"
@@ -420,8 +555,9 @@ STRINGS = {
         'btn_cat_add': "➕ Add a new type",
         'cat_entry': "🧩 <b>{label}</b>\n<blockquote>🔑 Key: <code>{key}</code>\n"
                      "📁 Category: {kind}\n🎁 Starting amount: {default}\n{extra}</blockquote>{note}",
-        'cat_extra_building': "🏭 Produces: {produces}\n📈 Per level per week: {output}\n"
-                              "💸 Upgrade cost: {costs}",
+        'cat_extra_building': "🏭 Produces: {produces}\n📈 Base per level per week: {output}\n"
+                              "💸 Base upgrade cost: {costs}\n🏁 Level ceiling: {max}\n"
+                              "🎚 Hand-tuned levels: {tuned}",
         'cat_extra_resource': "🚢 Tradeable: {tradeable}",
         'cat_produces_none': "nothing",
         'cat_costs_none': "free",
@@ -437,6 +573,36 @@ STRINGS = {
         'btn_cat_output': "📈 Production",
         'btn_cat_tradeable': "🚢 Tradeable",
         'btn_cat_costs': "💸 Upgrade cost",
+        'btn_cat_levels': "🎚 Per-level cost & yield",
+        'btn_cat_max': "🏁 Level ceiling",
+        'btn_cat_level_add': "➕ Tune one level",
+        'btn_cat_level': "Level {level} — {cost} | 📈 {out}",
+        'btn_cat_level_output': "📈 This level's yield",
+        'btn_cat_level_clear': "♻️ Back to the base values",
+        'cat_levels_title': "🎚 <b>{label}</b> — per-level tuning\n"
+                            "<blockquote>💸 Base cost: {costs}\n📈 Base yield per level: {output}\n"
+                            "🏁 Level ceiling: {max}\n🎚 Hand-tuned levels: {tuned}</blockquote>\n"
+                            "Any level not listed here uses the base values.",
+        'cat_level_title': "🎚 <b>{label}</b> — level {level}\n"
+                           "<blockquote>💸 This level costs: {cost}\n"
+                           "📈 This level yields: {out} ({source})\n"
+                           "🧮 Total yield at level {level}: {total}</blockquote>\n"
+                           "Tap a resource to change what this level costs.",
+        'cat_lvl_inherited': "same as the base cost",
+        'cat_lvl_output_own': "hand-set",
+        'cat_lvl_output_flat': "base",
+        'cat_levels_none': "none",
+        'cat_max_none': "no ceiling",
+        'cat_ask_level': "Which level do you want to tune? (a number from 1 to {max})",
+        'cat_ask_level_cost': "How much {res} should reaching level {level} cost? (zero means none)",
+        'cat_ask_level_output': "How much should level {level} produce each weekly cycle?",
+        'cat_level_cleared': "♻️ Level {level} is back to the base values.",
+        'cat_ask_max': "What is the highest level for this building? (now: {current} — zero means no ceiling, at most {ceiling})",
+        'cat_max_set': "🏁 Level ceiling set to {max}.",
+        'cat_max_lifted': "🏁 Level ceiling lifted.",
+        'cat_err_bad_level': "That is not a valid level number.",
+        'cat_err_bad_output': "Output cannot be negative.",
+        'act_asset_level': "building level tuning",
         'btn_cat_hide': "🗑 Remove from the game",
         'btn_cat_unhide': "♻️ Restore to the game",
         'cat_ask_key': "Send the internal key for the new type (lowercase and underscores, e.g. archers):",
@@ -579,6 +745,17 @@ STRINGS = {
         'sec_building': "🏭 Binalar:",
         'unset': "ayarlanmadı",
         'nobody': "yok",
+        'bot_off': "⛔️ Bot şimdilik oyunculara kapalı. Lütfen bir yöneticiyle konuşun.",
+        'bot_turned_on': "✅ Bot yeniden oyunculara açık.",
+        'bot_turned_off': "⛔️ Bot oyunculara kapatıldı. Yönetim paneli çalışmaya devam ediyor.",
+        'bot_on_already': "Bot zaten açıktı.",
+        'bot_off_already': "Bot zaten kapalıydı.",
+        'btn_players_on': "🟢 Oyunculara açık — kapatmak için dokunun",
+        'btn_players_off': "⛔️ Oyunculara kapalı — açmak için dokunun",
+        'panel_closed': "\n\n⛔️ Bot oyunculara kapalı (açmak için /on).",
+        'act_bot_switch': "bot açıldı/kapatıldı",
+        'act_statement': "bildiri",
+        'act_campaign': "sefer",
         'feat_title': "⚙️ Bot bölümleri — durumu değiştirmek için birine dokunun:",
         'feat_on': "✅",
         'feat_off': "❌",
@@ -608,6 +785,7 @@ STRINGS = {
         'act_war_photo': "savaş fotoğrafı",
         'act_trade_config': "ticaret ayarı",
         'act_chokepoint_owner': "geçit sahipliği",
+        'act_trade_mode': "ülke ticareti açıldı/kapatıldı",
         'act_group_home': "grup ticaret konumu",
         'adm_title': "👑 Bot yöneticileri\n<blockquote>👑 Sahip: {owner}</blockquote>\n"
                      "Çıkarmak için bir yöneticiye dokunun:",
@@ -625,6 +803,16 @@ STRINGS = {
                          "Antlaşmalar ve ticaret konumları değişmez. "
                          "Bu işlem geri alınamaz.",
         'btn_confirm_reset': "✅ Evet, sıfırla",
+        'btn_reset_all': "♻️ Tüm ülkeleri geri yükle ({n})",
+        'btn_confirm_reset_all': "✅ Evet, hepsini geri yükle",
+        'reset_all_confirm': "♻️ <b>Tüm ülkeleri geri yükle</b>\n<blockquote>{n} ülkenin "
+                             "kaynakları, birlikleri ve binaları başlangıç değerlerine "
+                             "döner:\n{names}\n\nBu yalnızca ülkelerin sayılarını sıfırlar; "
+                             "varlık kataloğuna ve oyun ayarlarına dokunmaz.</blockquote>",
+        'reset_all_done': "♻️ {n} ülkenin hepsi başlangıç durumuna döndü.",
+        'setlord_restored': "\n♻️ Ülkenin önceki varlıkları kendisine devredildi.",
+        'act_reset_all': "tüm ülkeler geri yüklendi",
+        'act_country_restore': "ülke yeni lorda devredildi",
         'reset_done': "♻️ <b>{title}</b> grubunun varlıkları başlangıç değerlerine döndürüldü.",
         'war_photo_title': "🖼 Sefer fotoğrafları — ayarlamak için birine dokunun:",
         'wp_land': "🐫 Kara seferi fotoğrafı",
@@ -645,13 +833,14 @@ STRINGS = {
         'unsetlord_not_admin': "Bir lordluğu yalnızca bot yöneticisi geri alabilir.",
         'unsetlord_not_owner': "Bir grubu tümüyle emekliye ayırmak yalnızca bot sahibine özeldir.",
         'unsetlord_no_lords': "Bu grupta kaldırılacak bir lord yok.",
-        'unsetlord_done': "🚫 {u} artık lord değil; ülkesinin varlıkları silindi.",
+        'unsetlord_done': "🚫 {u} artık lord değil. Ülke sahip olduklarını korur; sonraki lord devralır.",
         'btn_unset_group': "🔥 Evet, bu grubu emekliye ayır",
         'unsetlord_group_confirm': "🔥 <b>“{title}” emekliye ayrılsın mı?</b>\n<blockquote>{n} "
-                                   "lordu ve sahip oldukları tüm kaynaklar, birlikler ve "
-                                   "binalar kalıcı olarak silinecek.\n\n⚠️ Yalnızca bir kişiyi "
-                                   "kaldırmak için onun mesajını yanıtlayıp /unsetlord "
-                                   "gönderin.</blockquote>",
+                                   "lordu kaldırılır, ancak ülke tüm kaynaklarını, birliklerini "
+                                   "ve binalarını korur — bu grubun sonraki lordu devralır.\n\n"
+                                   "♻️ Her şeyi sıfırlamak için yönetim panelindeki Sıfırla "
+                                   "düğmesini kullanın.\n\n⚠️ Yalnızca bir kişiyi kaldırmak "
+                                   "için onun mesajını yanıtlayıp /unsetlord gönderin.</blockquote>",
         'unsetlord_group_done': "🔥 “{title}” emekliye ayrıldı; {n} lord kaldırıldı.",
         'unsetlord_err_not_lord': "Bu kullanıcı bu grubun lordu değil.",
         'unsetlord_err_no_lords': "Bu grupta kaldırılacak bir lord yok.",
@@ -663,6 +852,32 @@ STRINGS = {
         'act_asset_type_edit': "varlık türü düzenlendi",
         'act_asset_hide': "varlık türü kaldırıldı",
         'act_asset_cost': "yükseltme maliyeti",
+        'btn_country_assets': "🎛 Ülke varlıkları",
+        'gas_pick': "🎛 Hangi ülkenin varlıklarını değiştirmek istiyorsunuz? (sayfa {p}/{n})",
+        'gas_marks': " ({off}🚫 {paused}⏸)",
+        'gas_country': "🎛 <b>{g}</b>\n<blockquote>🚫 Sahip değil: {off}\n⏸ Kapalı: "
+                       "{paused}</blockquote>\n"
+                       "\"Sahip değil\" bu tür bu ülke için hiç yok demektir. \"Kapalı\" bina "
+                       "duruyor ama üretmiyor demektir.",
+        'gas_kind_btn': "{kind} — {total} içinden {n}",
+        'gas_kind': "🎛 {g} — {kind} (sayfa {p}/{n})\n"
+                    "Bu ülkeden almak veya geri vermek için bir ada dokunun.",
+        'gas_none': "yok",
+        'gas_on': "✅",
+        'gas_off': "🚫",
+        'btn_gas_stop': "⏸ Durdur",
+        'btn_gas_run': "▶️ Başlat",
+        'gas_removed': "🚫 “{label}” bu ülkeden alındı.",
+        'gas_restored': "✅ “{label}” bu ülkeye geri verildi.",
+        'gas_stopped': "⏸ “{label}” kapatıldı; artık üretmiyor.",
+        'gas_running': "▶️ “{label}” yeniden çalışıyor.",
+        'btn_gas_clear': "♻️ Her şeyi normale döndür",
+        'btn_gas_clear_yes': "✅ Evet, hepsini geri al",
+        'gas_clear_confirm': "♻️ <b>{g}</b> üzerindeki tüm değişiklikler kaldırılsın mı?"
+                             "\n<blockquote>{off} kaldırılan tür ve {paused} kapalı bina "
+                             "normale döner. Ülkenin sayıları değişmez.</blockquote>",
+        'gas_cleared': "♻️ {n} değişiklik kaldırıldı.",
+        'act_country_asset': "bir ülkenin varlıkları",
         'btn_catalog': "🧩 Varlıklar ve birimler",
         'cat_title': "🧩 Oyunun varlık kataloğu — bir kategori seçin:\n"
                      "<blockquote>📦 Kaynaklar: {resources}\n⚔️ Birimler: {units}\n"
@@ -675,8 +890,9 @@ STRINGS = {
         'btn_cat_add': "➕ Yeni tür ekle",
         'cat_entry': "🧩 <b>{label}</b>\n<blockquote>🔑 Anahtar: <code>{key}</code>\n"
                      "📁 Kategori: {kind}\n🎁 Başlangıç miktarı: {default}\n{extra}</blockquote>{note}",
-        'cat_extra_building': "🏭 Ürettiği: {produces}\n📈 Seviye başına haftalık: {output}\n"
-                              "💸 Yükseltme maliyeti: {costs}",
+        'cat_extra_building': "🏭 Ürettiği: {produces}\n📈 Seviye başına temel haftalık: {output}\n"
+                              "💸 Temel yükseltme maliyeti: {costs}\n🏁 Seviye tavanı: {max}\n"
+                              "🎚 Elle ayarlanan seviyeler: {tuned}",
         'cat_extra_resource': "🚢 Ticarete açık: {tradeable}",
         'cat_produces_none': "hiçbir şey",
         'cat_costs_none': "ücretsiz",
@@ -692,6 +908,36 @@ STRINGS = {
         'btn_cat_output': "📈 Üretim",
         'btn_cat_tradeable': "🚢 Ticarete açık",
         'btn_cat_costs': "💸 Yükseltme maliyeti",
+        'btn_cat_levels': "🎚 Seviye başına maliyet ve verim",
+        'btn_cat_max': "🏁 Seviye tavanı",
+        'btn_cat_level_add': "➕ Bir seviyeyi elle ayarla",
+        'btn_cat_level': "Seviye {level} — {cost} | 📈 {out}",
+        'btn_cat_level_output': "📈 Bu seviyenin verimi",
+        'btn_cat_level_clear': "♻️ Temel değerlere döndür",
+        'cat_levels_title': "🎚 <b>{label}</b> — seviye başına ayar\n"
+                            "<blockquote>💸 Temel maliyet: {costs}\n📈 Seviye başına temel verim: {output}\n"
+                            "🏁 Seviye tavanı: {max}\n🎚 Elle ayarlanan seviyeler: {tuned}</blockquote>\n"
+                            "Burada olmayan her seviye temel değerleri kullanır.",
+        'cat_level_title': "🎚 <b>{label}</b> — seviye {level}\n"
+                           "<blockquote>💸 Bu seviyenin maliyeti: {cost}\n"
+                           "📈 Bu seviyenin verimi: {out} ({source})\n"
+                           "🧮 Seviye {level} toplam verim: {total}</blockquote>\n"
+                           "Maliyeti değiştirmek için bir kaynağa dokunun.",
+        'cat_lvl_inherited': "temel maliyetle aynı",
+        'cat_lvl_output_own': "elle",
+        'cat_lvl_output_flat': "temel",
+        'cat_levels_none': "yok",
+        'cat_max_none': "tavan yok",
+        'cat_ask_level': "Hangi seviyeyi elle ayarlamak istiyorsunuz? (1 ile {max} arası bir sayı)",
+        'cat_ask_level_cost': "Seviye {level} için ne kadar {res} gereksin? (sıfır: gerekmez)",
+        'cat_ask_level_output': "Seviye {level} her haftalık döngüde ne kadar üretsin?",
+        'cat_level_cleared': "♻️ Seviye {level} temel değerlere döndü.",
+        'cat_ask_max': "Bu bina en fazla kaçıncı seviyeye çıksın? (şu an: {current} — sıfır: tavan yok, en çok {ceiling})",
+        'cat_max_set': "🏁 Seviye tavanı {max} olarak ayarlandı.",
+        'cat_max_lifted': "🏁 Seviye tavanı kaldırıldı.",
+        'cat_err_bad_level': "Geçerli bir seviye numarası değil.",
+        'cat_err_bad_output': "Üretim negatif olamaz.",
+        'act_asset_level': "bina seviye ayarı",
         'btn_cat_hide': "🗑 Oyundan kaldır",
         'btn_cat_unhide': "♻️ Oyuna geri getir",
         'cat_ask_key': "Yeni tür için dahili anahtarı gönderin (küçük harf ve alt çizgi, örn. archers):",

@@ -20,6 +20,7 @@ import threading
 from telebot import types
 
 import asset_catalog as catalog
+import country_assets
 
 _bot = None
 _conn = None
@@ -44,9 +45,12 @@ STRINGS = {
         'sec_unit': "⚔️ ارتش:",
         'sec_building': "🏭 ساختمان‌ها:",
         'nothing': "ندارد",
-        'upgrade_pick': "انتخاب کنید که کدام بخش را می‌خواهید ارتقا دهید:",
-        'upgrade_confirm': "برای ارتقا {label} به این مقادیر نیاز دارید:\n<blockquote>{costs}</blockquote>",
-        'upgrade_free': "ارتقا {label} هزینه‌ای ندارد.",
+        'upgrade_pick': "انتخاب کنید که کدام بخش را می‌خواهید ارتقا دهید:\n(داخل پرانتز سطح فعلی و سقف آن آمده است)",
+        'upgrade_confirm': "برای ارتقا {label} به سطح {level} به این مقادیر نیاز دارید:\n<blockquote>{costs}</blockquote>{cap}",
+        'upgrade_free': "ارتقا {label} به سطح {level} هزینه‌ای ندارد.{cap}",
+        'upgrade_cap_note': "\n🏁 سقف سطح این ساختمان: {max}",
+        'upgrade_maxed': "🏁 {label} به سقف سطح خود ({max}) رسیده و بیشتر ارتقا نمی‌یابد.",
+        'lvl_uncapped': "بدون سقف",
         'btn_upgrade_yes': "✅ بله، ارتقا بده",
         'upgraded': "✅ {label} ارتقا یافت (سطح {level}).",
         'insufficient': "💸 موجودی شما کافی نیست.",
@@ -75,9 +79,12 @@ STRINGS = {
         'sec_unit': "⚔️ Army:",
         'sec_building': "🏭 Buildings:",
         'nothing': "none",
-        'upgrade_pick': "Choose what you want to upgrade:",
-        'upgrade_confirm': "Upgrading {label} costs:\n<blockquote>{costs}</blockquote>",
-        'upgrade_free': "Upgrading {label} is free.",
+        'upgrade_pick': "Choose what you want to upgrade:\n(the brackets show the current level and its ceiling)",
+        'upgrade_confirm': "Upgrading {label} to level {level} costs:\n<blockquote>{costs}</blockquote>{cap}",
+        'upgrade_free': "Upgrading {label} to level {level} is free.{cap}",
+        'upgrade_cap_note': "\n🏁 Level ceiling for this building: {max}",
+        'upgrade_maxed': "🏁 {label} has reached its ceiling ({max}) and cannot go higher.",
+        'lvl_uncapped': "no ceiling",
         'btn_upgrade_yes': "✅ Yes, upgrade it",
         'upgraded': "✅ {label} was upgraded (level {level}).",
         'insufficient': "💸 You do not have enough for that.",
@@ -106,9 +113,12 @@ STRINGS = {
         'sec_unit': "⚔️ Ordu:",
         'sec_building': "🏭 Binalar:",
         'nothing': "yok",
-        'upgrade_pick': "Neyi yükseltmek istediğinizi seçin:",
-        'upgrade_confirm': "{label} yükseltmesi şunlara mal olur:\n<blockquote>{costs}</blockquote>",
-        'upgrade_free': "{label} yükseltmesi ücretsiz.",
+        'upgrade_pick': "Neyi yükseltmek istediğinizi seçin:\n(parantez içinde mevcut seviye ve tavanı yazar)",
+        'upgrade_confirm': "{label} seviye {level} yükseltmesi şunlara mal olur:\n<blockquote>{costs}</blockquote>{cap}",
+        'upgrade_free': "{label} seviye {level} yükseltmesi ücretsiz.{cap}",
+        'upgrade_cap_note': "\n🏁 Bu binanın seviye tavanı: {max}",
+        'upgrade_maxed': "🏁 {label} tavanına ({max}) ulaştı, daha fazla yükseltilemez.",
+        'lvl_uncapped': "tavan yok",
         'btn_upgrade_yes': "✅ Evet, yükselt",
         'upgraded': "✅ {label} yükseltildi (seviye {level}).",
         'insufficient': "💸 Bunun için yeterli kaynağınız yok.",
@@ -139,6 +149,9 @@ def init(bot, conn, lang='fa', audit=None, is_admin=None):
     _lang = lang
     _audit = audit
     _is_admin = is_admin
+    # These screens honour what a country does and does not have, so the
+    # override table has to be reachable whether or not the panel is wired.
+    country_assets.attach(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -196,11 +209,18 @@ def _lines(values):
 # ---------------------------------------------------------------------------
 
 
-def sections(values, joiner='\n\n'):
-    """One "header + quoted list" block per kind, in the admin's chosen order."""
+def sections(values, joiner='\n\n', group_id=None):
+    """One "header + quoted list" block per kind, in the admin's chosen order.
+
+    With a group_id, the types an admin has taken away from that country are
+    left out — a landlocked nation should not be shown a fleet of zero ships.
+    """
+    def keys(kind):
+        return (country_assets.keys_for(group_id, kind) if group_id is not None
+                else catalog.keys(kind))
     return joiner.join(
         "{}\n<blockquote>{}</blockquote>".format(
-            _t('sec_' + kind), _lines({k: values[k] for k in catalog.keys(kind)}))
+            _t('sec_' + kind), _lines({k: values[k] for k in keys(kind) if k in values}))
         for kind in catalog.kind_order())
 
 
@@ -211,7 +231,7 @@ def show_assets(chat_id, group_id):
         _bot.send_message(chat_id, _t('not_registered'))
         return
     text = _t('assets_title',
-              sections=sections(values),
+              sections=sections(values, group_id=group_id),
               treaties=_esc(values['treaties']) or _t('nothing'))
     _bot.send_message(chat_id, text, parse_mode='HTML')
 
@@ -221,14 +241,37 @@ def show_assets(chat_id, group_id):
 # ---------------------------------------------------------------------------
 
 
-def upgrade_menu(chat_id):
-    buildings = catalog.keys('building')
+# Why an upgrade did not happen. _charge_and_upgrade() returns the new level as
+# an int, or one of these, so "you are broke" and "this is as high as it goes"
+# can be told apart in the reply.
+MAXED = 'maxed'
+INSUFFICIENT = 'insufficient'
+NO_COUNTRY = 'no_country'
+
+
+def _cap_note(key):
+    """The "ceiling is N" line, or nothing at all when the building is uncapped."""
+    cap = catalog.max_level(key)
+    return _t('upgrade_cap_note', max=cap) if cap else ''
+
+
+def _level_suffix(key, level):
+    """The "(3/20)" a picker button carries, so the ceiling is visible up front."""
+    cap = catalog.max_level(key)
+    return f" ({level}/{cap})" if cap else f" ({level})"
+
+
+def upgrade_menu(chat_id, group_id=None):
+    group_id = chat_id if group_id is None else group_id
+    buildings = country_assets.keys_for(group_id, 'building')
     if not buildings:
         _bot.send_message(chat_id, _t('err_generic'))
         return
+    levels = _row(group_id, list(buildings)) or {}
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(*[types.InlineKeyboardButton(_label(key), callback_data=f'ag:upc:{key}')
-                 for key in buildings])
+    markup.add(*[types.InlineKeyboardButton(
+        _label(key) + _level_suffix(key, levels.get(key, 0)),
+        callback_data=f'ag:upc:{key}') for key in buildings])
     _bot.send_message(chat_id, _t('upgrade_pick'), reply_markup=markup)
 
 
@@ -237,16 +280,33 @@ def _confirm_upgrade(call, key):
     if row is None or row['kind'] != 'building' or row['hidden']:
         _answer(call, _t('err_generic'), alert=True)
         return
-    costs = catalog.upgrade_cost(key)
+    group_id = call.message.chat.id
+    if country_assets.is_hidden(group_id, key):
+        _answer(call, _t('err_generic'), alert=True)
+        return
+    current = _row(group_id, [key])
+    if current is None:
+        _answer(call, _t('not_registered'), alert=True)
+        return
+    level = current[key]
+    if catalog.at_max_level(key, level):
+        _answer(call)
+        _bot.send_message(group_id, _t('upgrade_maxed', label=_label(key),
+                                       max=catalog.max_level(key)))
+        return
+    # The price quoted is the price of the level about to be bought, which is
+    # the flat one unless an admin has tuned that particular level.
+    target = level + 1
+    costs = catalog.upgrade_cost(key, target)
     if costs:
-        text = _t('upgrade_confirm', label=_label(key),
+        text = _t('upgrade_confirm', label=_label(key), level=target, cap=_cap_note(key),
                   costs='\n'.join(f"{_label(res)}: {amount}" for res, amount in costs.items()))
     else:
-        text = _t('upgrade_free', label=_label(key))
+        text = _t('upgrade_free', label=_label(key), level=target, cap=_cap_note(key))
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(_t('btn_upgrade_yes'), callback_data=f'ag:upy:{key}'))
     _answer(call)
-    _bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode='HTML')
+    _bot.send_message(group_id, text, reply_markup=markup, parse_mode='HTML')
 
 
 def _do_upgrade(call, key):
@@ -255,32 +315,52 @@ def _do_upgrade(call, key):
         _answer(call, _t('err_generic'), alert=True)
         return
     group_id = call.message.chat.id
-    level = _charge_and_upgrade(group_id, key)
+    if country_assets.is_hidden(group_id, key):
+        _answer(call, _t('err_generic'), alert=True)
+        return
+    result = _charge_and_upgrade(group_id, key)
     _answer(call)
-    if level is None:
+    if result == MAXED:
+        _bot.send_message(group_id, _t('upgrade_maxed', label=_label(key),
+                                       max=catalog.max_level(key)))
+        return
+    if not isinstance(result, int):
         _bot.send_message(group_id, _t('insufficient'))
         return
-    _bot.send_message(group_id, _t('upgraded', label=_label(key), level=level),
+    _bot.send_message(group_id, _t('upgraded', label=_label(key), level=result),
                       parse_mode='HTML')
 
 
 def _charge_and_upgrade(group_id, key):
-    """Check, deduct and increment in one transaction. New level, or None."""
-    costs = catalog.upgrade_cost(key)
-    cols = list(costs)
+    """Check the ceiling, check the price, deduct and increment atomically.
+
+    The level is read inside the lock and the price is looked up from it, so two
+    taps racing each other cannot both buy level 7 at level 7's price.
+    Returns the new level, or MAXED / INSUFFICIENT / NO_COUNTRY.
+    """
     with _lock:
-        cur = _conn.execute(f"SELECT {', '.join(cols + [key])} FROM users WHERE group_id=?",
-                            (group_id,))
-        found = cur.fetchone()
+        found = _conn.execute(f"SELECT {key} FROM users WHERE group_id=?",
+                              (group_id,)).fetchone()
         if found is None:
-            return None
-        if any(found[i] < costs[c] for i, c in enumerate(cols)):
-            return None
+            return NO_COUNTRY
+        level = found[0] or 0
+        if catalog.at_max_level(key, level):
+            return MAXED
+        target = level + 1
+        costs = catalog.upgrade_cost(key, target)
+        cols = list(costs)
+        if cols:
+            have = _conn.execute(f"SELECT {', '.join(cols)} FROM users WHERE group_id=?",
+                                 (group_id,)).fetchone()
+            if have is None:
+                return NO_COUNTRY
+            if any(have[i] < costs[c] for i, c in enumerate(cols)):
+                return INSUFFICIENT
         sets = [f"{c} = {c} - ?" for c in cols] + [f"{key} = {key} + 1"]
         _conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE group_id=?",
                       [costs[c] for c in cols] + [group_id])
         _conn.commit()
-    return found[len(cols)] + 1
+    return target
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +369,13 @@ def _charge_and_upgrade(group_id, key):
 
 
 def weekly_update(chat_id, group_id):
-    """Credit every building's output. Two buildings feeding one type stack."""
-    plan = catalog.production()
+    """Credit every building's output. Two buildings feeding one type stack.
+
+    The plan is this country's, not the game's: a building an admin removed
+    here, switched off here, or whose product this country does not have,
+    simply is not in it.
+    """
+    plan = country_assets.production_for(group_id)
     if not plan:
         _bot.send_message(chat_id, _t('weekly_empty'))
         return
@@ -300,8 +385,10 @@ def weekly_update(chat_id, group_id):
         return
 
     gains = {}
-    for building, produces, output in plan:
-        amount = levels[building] * output
+    for building, produces, _flat in plan:
+        # Not level x output: a level an admin has tuned contributes its own
+        # number instead of the flat one.
+        amount = catalog.output_at_level(building, levels[building])
         if amount:
             gains[produces] = gains.get(produces, 0) + amount
     if not gains:

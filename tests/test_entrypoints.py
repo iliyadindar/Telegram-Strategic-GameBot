@@ -389,16 +389,25 @@ class WarFlowTest(unittest.TestCase):
             self.COMMANDER: Chat(self.COMMANDER, 'private', first_name='Cyrus'),
             self.GROUP: Chat(self.GROUP, title='Persia'),
         }
-        self.module.user_context[self.COMMANDER] = {
-            'attack_type': 'land',
-            'attack_details': '9000 swordsmen and 12 cannons',
-            'attack_origin': 'Persepolis',
-            'attack_destination': 'Athens',
+        self.broadcast = self.module.broadcast
+        self.addCleanup(self.broadcast._drafts.clear)
+        self.broadcast._drafts[self.COMMANDER] = {
+            'kind': 'campaign',
+            'chat_id': self.GROUP,
+            'type': 'land',
+            'details': '9000 swordsmen and 12 cannons',
+            'origin': 'Persepolis',
+            'destination': 'Athens',
+            'when': 'dawn',
         }
 
+    def confirm(self):
+        """Tap the campaign's ✅ button, which is what now sends it."""
+        self.module.callback_query(
+            Call('bc:aok', User(self.COMMANDER), Message(Chat(self.GROUP), User(self.COMMANDER))))
+
     def run_flow(self):
-        message = Message(Chat(self.GROUP), User(self.COMMANDER), text='dawn')
-        self.module.send_attack_details(message, self.COMMANDER)
+        self.confirm()
 
     def channel_posts(self):
         return [(chat, text) for chat, text in self.bot.sent if str(chat).startswith('@')]
@@ -436,7 +445,32 @@ class WarFlowTest(unittest.TestCase):
 
     def test_context_is_cleared_so_two_campaigns_do_not_mix(self):
         self.run_flow()
-        self.assertNotIn(self.COMMANDER, self.module.user_context)
+        self.assertNotIn(self.COMMANDER, self.broadcast._drafts)
+
+    # --- item 13: nothing goes out until somebody presses the button ------
+
+    def test_a_preview_is_offered_before_anything_is_sent(self):
+        self.broadcast._preview_campaign(self.COMMANDER)
+        self.assertEqual(self.channel_posts(), [])
+        self.assertIn('bc:aok', self.bot.last_keyboard())
+        self.assertIn('bc:ax', self.bot.last_keyboard())
+
+    def test_the_preview_shows_what_will_be_posted(self):
+        self.broadcast._preview_campaign(self.COMMANDER)
+        preview = self.bot.last_sent_text()
+        self.assertIn('Persepolis', preview)
+        self.assertIn('Athens', preview)
+
+    def test_cancelling_sends_nothing_and_drops_the_draft(self):
+        self.module.callback_query(
+            Call('bc:ax', User(self.COMMANDER), Message(Chat(self.GROUP), User(self.COMMANDER))))
+        self.assertEqual(self.channel_posts(), [])
+        self.assertNotIn(self.COMMANDER, self.broadcast._drafts)
+
+    def test_confirming_twice_only_posts_once(self):
+        self.confirm()
+        self.confirm()
+        self.assertEqual(len([t for c, t in self.channel_posts() if c == '@war']), 1)
 
 
 if __name__ == '__main__':

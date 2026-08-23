@@ -71,6 +71,21 @@ Her bina birden fazla seviyede yükseltilebilir. Daha yüksek seviyeler haftalı
 - Çiftlik · Hayvan Çiftliği · Giysi Fabrikası · Banka
 - Her birim türü için askeri kamplar ve tersaneler
 
+**Seviye başına maliyet ve verim.** Bir bina başlangıçta düzdür: her seviyenin
+paylaştığı tek bir yükseltme maliyeti ve tek bir verim. 🧩 *Varlıklar ve birimler
+→ bir bina →* 🎚 **Seviye başına maliyet ve verim** altında bir yönetici tek bir
+seviyeye kendi sayılarını verir — seviye 7 seviye 6'dan pahalı olsun, daha az
+üretsin ya da ikisi birden. Dokunulmamış her seviye temel değerleri kullanmayı
+sürdürür, yani bir seviyeyi ayarlamak tam olarak o seviyeyi değiştirir. ♻️ bir
+seviyeyi geri alır.
+
+**Seviye tavanı.** 🏁 **Seviye tavanı** bir binanın nereye kadar çıkacağını
+belirler — 20 yapın, satın alınabilecek son seviye 20 olur. `0` tavan yok
+demektir; her bina böyle gelir. Tavanı düşürmek bir grubun zaten ödediği bir
+seviyeyi asla geri almaz, yalnızca bir sonraki alımı durdurur. Yükseltme menüsü
+her binayı `(3/20)` biçiminde gösterir, böylece sınır harcama yapılmadan önce
+görülür.
+
 ### Dünya Ticareti
 
 Lordlar, tamamen cam düğmelerle, iki dünya haritası üzerinden birbirleriyle ticaret yapar:
@@ -78,13 +93,13 @@ Lordlar, tamamen cam düğmelerle, iki dünya haritası üzerinden birbirleriyle
 - **Deniz rotaları** 🚢 — boğazlar ve kanallarla (Süveyş, Panama, Hürmüz, Bab-ül Mendeb, Malakka...) birbirine bağlanan okyanuslar, denizler ve körfezler. Geçiş noktaları ücretlidir; Ümit Burnu ve Horn Burnu üzerinden ücretsiz ama uzun rotalar vardır.
 - **Kara rotaları** 🐫 — Hayber, Pamir ve Sahra Yolu gibi ücretli geçitlerle bağlanan İpek Yolu bölgeleri (Pers, Anadolu, Hindistan, Çin...).
 - **Rota seçimi** — bot en fazla üç rota (en hızlı / geçiş ücretsiz / en ucuz) için süre, ücret ve geçiş maliyetlerini gösterir; seçimi gönderici yapar.
-- **Gemiler ve kervanlar** — deniz ticareti yük kapasiteli gemiler gerektirir (teslimata kadar kilitlenir); kara ticareti kervanlarla yapılır.
+- **Gemiler ve kervanlar** — ikisi de ülkeye ait, araç başına yük kapasitesi olan birimlerdir; yolculuk boyunca kilitlenir ve varışta geri döner. Bir ülkenin kervan sayısı gemilerinin yanında varlıklarında durur ve tüm kapasiteler ⚙️ *Ticaret ayarları → Araç kapasitesi ve maliyeti* altında belirlenir.
 - **Teklif ve emanet** — mallar, araçlar ve ücretler teklif gönderilirken düşülür; hedef lord kabul veya reddeder; reddedilen, iptal edilen veya süresi dolan teklifler tamamen iade edilir.
 - **Canlı takip** — bot sevkiyatı gerçek zamanlı ilerletir ve her ara noktada takip mesajını düzenler ("sevkiyat Süveyş Kanalı geçişini tamamladı — ücret ödendi"); kalkış ve varışlar oyun kanalına duyurulur.
 - **Boğaz sahipliği** 🪙 — yönetici herhangi bir boğaz, kanal veya geçidin sahipliğini bir gruba verebilir: geçiş ücretleri o grubun hazinesine gider ve kendi sevkiyatları ücretsiz geçer. Sahipsiz geçişlerin ücretleri yakılır.
 - **Yönetici ayarları** — her grubun deniz/kara konumu ile tüm hız, ücret, geçiş ve kapasite değerleri oyun içinden düzenlenebilir.
 - **Düzenlenebilir harita** 🗺 — dünyanın kendisi koda değil veriye dayanır. 🗺 *Ticaret haritasını düzenle* ekranından bir yönetici her denizi, boğazı veya bölgeyi üç dilde yeniden adlandırabilir, türünü değiştirebilir, ülkelerin orada konuşlanıp konuşlanamayacağına karar verebilir, geçiş ücretini belirleyebilir ve tamamen yeni yerler ve yollar çizebilir. Her yolun bir **uzunluğu** (ücreti ve hangi rotanın en ucuz olduğunu belirler) ve isteğe bağlı bir **kesin yolculuk süresi** vardır; böylece bir yol, fiyatlara dokunmadan yeniden zamanlanabilir. Bir yeri veya yolu silmek yalnızca sahibe açıktır ve bir konvoy hâlâ ona ihtiyaç duyuyorsa reddedilir.
-- **Ticaret fotoğrafı** 🖼 — bir yönetici ticaret mesajlarına fotoğraf ekleyebilir; teklif kartı, canlı takip mesajı ve kanal duyuruları o zaman altyazılı fotoğraf olarak gönderilir. Telegram'ın 1024 karakterlik altyazı sınırını aşan metinler otomatik olarak düz metne döner.
+- **Ticaret fotoğrafları** 🖼 — deniz ve kara ticaretinin her birinin kendi fotoğrafı vardır (yedek olarak ortak bir fotoğrafla birlikte); teklif kartı, canlı takip mesajı ve kanal duyuruları o zaman altyazılı fotoğraf olarak gönderilir. Telegram'ın 1024 karakterlik altyazı sınırını aşan metinler otomatik olarak düz metne döner.
 
 ---
 
@@ -102,17 +117,53 @@ Paneli açmak için bir grupta **veya** botun özel sohbetinde `/admin` gönderi
 | 👑 **Yöneticiler** | *(yalnızca sahip)* Kullanıcının bir mesajını ileterek ya da sayısal kimliğini göndererek yönetici ekleyin ve tekrar çıkarın. Yapılandırmadaki sahip her zaman yöneticidir ve çıkarılamaz |
 | 🧩 **Varlıklar ve birimler** | Kaynak, birim ve bina türlerini ekleyin, yeniden adlandırın, ayarlayın veya kaldırın — [Varlık Kataloğu](#-varlık-kataloğu) |
 | ♻️ **Ülkeyi sıfırla** | Bir grubun kaynaklarını, askerlerini ve binalarını onay adımının ardından başlangıç değerlerine döndürür. Antlaşmalar ve ticaret konumları değişmez; önceki değerler işlem kaydına yazılır |
-| 🖼 **Ticaret fotoğrafı** | Ticaret mesajlarında kullanılan fotoğrafı ayarlayın veya kaldırın |
+| 🖼 **Ticaret fotoğrafları** | Her ticaret türü için bir fotoğraf ayarlayın veya kaldırın — deniz, kara ya da ortak yedek |
+| 🎛 **Ülke varlıkları** | Bir türü tek bir ülkeden alın, geri verin ya da bir fabrikayı yerinde bırakıp boşta tutun |
+| ⛔️ **Botu aç/kapat** | `/off` oyunu oyunculara kapatır, `/on` yeniden açar; yöneticiler her hâlükârda paneli kullanmayı sürdürür |
 | 🖼 **Savaş fotoğrafları** | Kara ve deniz seferi duyuruları için ayrı fotoğraflar ayarlayın veya kaldırın |
 | 🌍 **Ticaret yönetimi** | Konumlar, boğaz sahipliği, ticaret ayarları ve 🗺 **Ticaret haritasını düzenle** — [Dünya Ticareti](#dünya-ticareti) |
 | 🔥 **Kataloğu fabrika ayarlarına döndür** | *(yalnızca sahip)* Her varlık türünü oyunun çıktığı değerlere döndürür ve işlem kaydını temizler — [Varlık Kataloğu](#-varlık-kataloğu) |
 | 🎮 **Oyun menüsü** | Panelden çıkmadan normal oyuncu menüsünü açar |
 
+### Tek bir ülke için
+
+Katalog oyunda neyin var olduğunu söyler; 🎛 **Ülke varlıkları** *tek bir ülke
+için* neyin var olduğunu söyler. Karayla çevrili bir ulusun tersanesi, silahsız
+bir ulusun ordusu yoktur ve yaptırım altındaki bir ülkenin fabrikaları yerinde
+durup boş kalabilir. İki anahtar, çünkü farklı sorulara yanıt verirler:
+
+| | Ne yapar |
+|---|---|
+| 🚫 **Sahip değil** | Tür o ülke için hiç yoktur — varlık mesajından ve yükseltme menüsünden kalkar, binaları üretmeyi bırakır. Saklanan sayıya dokunulmaz, bu yüzden geri vermek ülkeyi tam olarak eski hâline döndürür |
+| ⏸ **Kapalı** | Ülkenin hâlâ sahip olduğu, ama çalışmayan bir bina. Seviyesiyle birlikte görünür kalır ve yükseltilebilir; yalnızca haftalık döngüde bir şey üretmez |
+
+Değişikliği olmayan bir ülke için hiçbir şey yazılmaz ve ♻️ bir ülkeyi tek
+dokunuşla katalog hâline döndürür. Bir türü ya da bir ülkeyi yok etmek, ona ait
+değişiklikleri de unutturur.
+
+### Bir rotayı kapatmak
+
+Her ülkenin kıyısı yoktur. 🚧 **Ülke ticaretini aç/kapat** bir ülke için deniz ya
+da kara ticaretini kapatır; o ülke artık o yoldan ne gönderir ne alır: rota
+ticaret menüsünden kalkar ve başkalarının hedef listesinde de görünmez. Yolda
+olan bir ticarete dokunulmaz — yükün varması gerekir. Denetim sevk anında yeniden
+çalışır, böylece biri konvoyu yüklerken kapatılan bir rota yola çıkmaz.
+
+### Bildiriler
+
+Bir bildiri bir yerden gelir, bu yüzden bir lord yalnızca kendi ülkesinin grup
+sohbetinden bildiri yayımlayabilir; botla özel sohbette göndermek reddedilir.
+Yöneticiler ve sahip her yerden gönderebilir ve hangi ülke adına konuştukları
+sorulur. Önizleme onaylanmadan kanala hiçbir şey gitmez ve uzunluk sınırı da
+kalktı: Telegram'ın 4096 karakterini aşan bir bildiri arka arkaya mesajlara
+bölünür, imza sonuncuya düşer; uzun altyazılı bir fotoğraf ise önce gider,
+sözler ardından gelir.
+
 ### Lord atama
 
 Oyuncular artık kendilerini kaydedemez. Bir yönetici grupta **oyuncunun mesajını yanıtlar** ve `/setlord` gönderir; bot gönderenin yönetici olduğunu doğrular ve yanıtlanan kullanıcıyı o grubun lordu olarak kaydeder.
 
-`/unsetlord` bir lordluğu geri alır. Bir oyuncunun mesajına yanıt olarak gönderildiğinde o oyuncuyu kaldırır; grupta tek başına gönderildiğinde grubun tümünü emekliye ayırmayı önerir. Ayrı bir kayıt tablosu yoktur — satırın kendisi *ülkedir* — bu yüzden her iki biçim de kaynakları, orduyu ve binaları birlikte siler. Tek kişiyi kaldırmak yönetici düzeyindedir; grubu emekliye ayırmak **yalnızca sahibe** özeldir ve önce bir onay düğmesi ister. O ülkenin yolda bir sevkiyatı varsa ikisi de reddedilir: silinmiş bir satıra yazılan iade veya teslimat sessizce kaybolur.
+`/unsetlord` bir lordluğu geri alır. Bir oyuncunun mesajına yanıt olarak gönderildiğinde o oyuncuyu kaldırır; grupta tek başına gönderildiğinde grubun tümünü emekliye ayırmayı önerir. Ayrı bir kayıt tablosu yoktur — satırın kendisi *ülkedir* — ancak lordun gitmesi artık ülkenin kaybı demek değil: son lord ayrıldığında kaynaklar, ordu, binalar, antlaşmalar ve ticaret konumları arşivlenir ve aynı grubun bir sonraki lorduna devredilir. Bir ülkeyi sıfırlamak ♻️ **Sıfırla** düğmesinin işidir ve ayrı, bilinçli bir karar olarak kalır. Tek kişiyi kaldırmak yönetici düzeyindedir; grubu emekliye ayırmak **yalnızca sahibe** özeldir ve önce bir onay düğmesi ister. O ülkenin yolda bir sevkiyatı varsa ikisi de reddedilir: silinmiş bir satıra yazılan iade veya teslimat sessizce kaybolur.
 
 ### Seferler ve savaş kanalı
 
@@ -246,9 +297,10 @@ BOT_TOKEN=123456:ABC ADMIN_ID=123456789 CHANNEL_ID=@news python main-tr.py
 | Komut | Açıklama |
 |---|---|
 | `/setlord` | **Yalnızca yönetici.** Bir oyuncunun mesajını yanıtlayarak onu o grubun lordu yapın |
-| `/unsetlord` | **Yalnızca yönetici.** Bir lordun mesajını yanıtlayarak onu kaldırın. Yanıtsız gönderildiğinde grubu tümüyle emekliye ayırmayı önerir — *yalnızca sahip*. Her iki durumda da ülkenin varlıkları gider |
+| `/unsetlord` | **Yalnızca yönetici.** Bir lordun mesajını yanıtlayarak onu kaldırın. Yanıtsız gönderildiğinde grubu tümüyle emekliye ayırmayı önerir — *yalnızca sahip*. Ülke sahip olduklarını korur; sonraki lord devralır |
 | `/start` | Ana menüyü açın ve oynamaya başlayın — grupta veya özel sohbette |
 | `/admin` | Yönetim panelini açın — grupta veya özel sohbette *(yalnızca yönetici)* |
+| `/on` · `/off` | Oyunu oyunculara açar veya kapatır. Yöneticiler her hâlükârda paneli kullanır *(yalnızca yönetici)* |
 | `panel` / `menü` | Tek başına bu kelime tam olarak `/start` ile aynı işi yapar, eğik çizgiye gerek yok |
 | `panel` | Tek başına bu kelime de paneli açar, eğik çizgiye gerek yok *(yalnızca yönetici; diğerleri için yok sayılır)* |
 
@@ -298,6 +350,8 @@ Telegram-Strategic-GameBot/
 ├── asset_catalog.py  # Kaynaklar, birimler ve binalar veri olarak: başlangıç, maliyet, üretim
 ├── asset_admin.py    # Katalog türlerini eklemek ve ayarlamak için panel ekranları
 ├── asset_ui.py       # Oyuncu ekranları: varlıklar, yükseltme, haftalık üretim, varlık düzenleyici
+├── country_assets.py # Oyunun değil, tek bir ülkenin sahip oldukları
+├── broadcast.py      # Bildiri ve seferler: önizleme, onay, uzunluk sınırı yok
 ├── trade_system.py   # Üç botun paylaştığı dünya ticareti motoru (rotalama, geçiş ücretleri, canlı takip)
 ├── trade_map.py      # Veri olarak dünya haritası: yerler, yollar, adları ve süreleri
 ├── trade_map_admin.py# Haritayı düzenlemek için panel ekranları

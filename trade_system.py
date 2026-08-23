@@ -46,6 +46,14 @@ _ticker_started = False
 
 TRADE_PREFIX = 'trd:'
 
+# Callbacks that belong to the admin screens. They stay reachable when the
+# player-facing trade feature is switched off, so main*.py checks against this
+# list rather than keeping a copy of its own that silently falls behind.
+ADMIN_OPS = frozenset({
+    'adm', 'hm', 'hg', 'h', 'cfgh', 'cfg', 'ck', 'ow', 'on', 'og',
+    'ph', 'phm', 'phs', 'phc', 'tm', 'tmg', 'tmt',
+}) | frozenset(trade_map_admin.OPS)
+
 # ---------------------------------------------------------------------------
 # Config (all admin-editable, persisted in trade_config)
 # ---------------------------------------------------------------------------
@@ -63,6 +71,153 @@ CONFIG_DEFAULTS = {
     'toll_sin': 50, 'toll_sah': 100, 'toll_cau': 100, 'toll_zag': 100,
     'toll_pam': 150, 'toll_khy': 100,
 }
+
+# The settings screen used to be four pages of `sea_min_per_unit = 30`, which
+# tells an admin the name of a variable and nothing about what it changes. Each
+# setting now carries a name and a sentence, and they are filed under three
+# sections instead of paged through alphabetically.
+#
+# Anything not named here — a toll for a chokepoint an admin drew themselves —
+# is labelled from the map, so a new strait is legible the moment it exists.
+
+# section key -> the settings in it, in the order they are shown. 'toll' is
+# filled in at render time from whatever chokepoints the map currently has.
+CONFIG_SECTIONS = (
+    ('journey', ('sea_min_per_unit', 'land_min_per_unit', 'fee_per_unit', 'offer_expiry_min')),
+    ('capacity', ('cap_small', 'cap_medium', 'cap_large', 'cap_caravan', 'caravan_cost')),
+    ('toll', ()),
+)
+
+CONFIG_LABELS = {
+    'fa': {
+        'sea_min_per_unit': "⏱ زمان سفر دریایی",
+        'land_min_per_unit': "⏱ زمان سفر زمینی",
+        'fee_per_unit': "💵 کرایه مسیر",
+        'offer_expiry_min': "⌛️ مهلت پاسخ به پیشنهاد",
+        'cap_small': "⛵ ظرفیت بار کشتی کوچک",
+        'cap_medium': "🚢 ظرفیت بار کشتی متوسط",
+        'cap_large': "🛳 ظرفیت بار کشتی بزرگ",
+        'cap_caravan': "🐫 ظرفیت بار هر کاروان",
+        'caravan_cost': "💰 هزینه هر کاروان در هر سفر",
+    },
+    'en': {
+        'sea_min_per_unit': "⏱ Sea travel time",
+        'land_min_per_unit': "⏱ Land travel time",
+        'fee_per_unit': "💵 Route fee",
+        'offer_expiry_min': "⌛️ Offer expiry",
+        'cap_small': "⛵ Small ship cargo capacity",
+        'cap_medium': "🚢 Medium ship cargo capacity",
+        'cap_large': "🛳 Large ship cargo capacity",
+        'cap_caravan': "🐫 Cargo capacity per caravan",
+        'caravan_cost': "💰 Cost per caravan per trip",
+    },
+    'tr': {
+        'sea_min_per_unit': "⏱ Deniz yolculuk süresi",
+        'land_min_per_unit': "⏱ Kara yolculuk süresi",
+        'fee_per_unit': "💵 Rota ücreti",
+        'offer_expiry_min': "⌛️ Teklif süresi",
+        'cap_small': "⛵ Küçük gemi yük kapasitesi",
+        'cap_medium': "🚢 Orta gemi yük kapasitesi",
+        'cap_large': "🛳 Büyük gemi yük kapasitesi",
+        'cap_caravan': "🐫 Kervan başına yük kapasitesi",
+        'caravan_cost': "💰 Sefer başına kervan maliyeti",
+    },
+}
+
+CONFIG_HELP = {
+    'fa': {
+        'sea_min_per_unit': "چند دقیقه طول بکشد تا یک ناوگان دریایی یک واحد فاصله را طی کند. "
+                            "عدد بزرگ‌تر یعنی سفرهای کندتر.",
+        'land_min_per_unit': "چند دقیقه طول بکشد تا یک کاروان یک واحد فاصله را طی کند. "
+                             "عدد بزرگ‌تر یعنی سفرهای کندتر.",
+        'fee_per_unit': "به ازای هر واحد از طول مسیر، چقدر پول از فرستنده گرفته شود. "
+                        "این جدا از عوارض گذرگاه‌هاست.",
+        'offer_expiry_min': "اگر گیرنده تا این تعداد دقیقه جواب ندهد، پیشنهاد باطل می‌شود و "
+                            "همه‌چیز به فرستنده برمی‌گردد.",
+        'cap_small': "هر کشتی کوچک چند واحد کالا می‌برد.",
+        'cap_medium': "هر کشتی متوسط چند واحد کالا می‌برد.",
+        'cap_large': "هر کشتی بزرگ چند واحد کالا می‌برد.",
+        'cap_caravan': "هر کاروان چند واحد کالا می‌برد. تعداد کاروان هر کشور در دارایی‌هایش است.",
+        'caravan_cost': "بابت هر کاروانی که در یک سفر راه می‌افتد، چقدر پول گرفته شود. "
+                        "خود کاروان بعد از رسیدن برمی‌گردد.",
+    },
+    'en': {
+        'sea_min_per_unit': "Minutes a sea convoy takes to cross one unit of distance. "
+                            "Larger means slower journeys.",
+        'land_min_per_unit': "Minutes a caravan takes to cross one unit of distance. "
+                             "Larger means slower journeys.",
+        'fee_per_unit': "Money charged to the sender per unit of route length. "
+                        "This is separate from chokepoint tolls.",
+        'offer_expiry_min': "If the receiver has not answered within this many minutes the "
+                            "offer lapses and everything goes back to the sender.",
+        'cap_small': "How many units of cargo one small ship carries.",
+        'cap_medium': "How many units of cargo one medium ship carries.",
+        'cap_large': "How many units of cargo one large ship carries.",
+        'cap_caravan': "How many units of cargo one caravan carries. How many caravans a "
+                       "country owns is one of its assets.",
+        'caravan_cost': "Money charged for each caravan sent on a trip. The caravan itself "
+                        "comes home when the convoy arrives.",
+    },
+    'tr': {
+        'sea_min_per_unit': "Bir deniz konvoyunun bir birim mesafeyi geçme süresi (dakika). "
+                            "Büyük değer daha yavaş yolculuk demektir.",
+        'land_min_per_unit': "Bir kervanın bir birim mesafeyi geçme süresi (dakika). "
+                             "Büyük değer daha yavaş yolculuk demektir.",
+        'fee_per_unit': "Rota uzunluğunun her birimi için göndericiden alınan para. "
+                        "Geçit ücretlerinden ayrıdır.",
+        'offer_expiry_min': "Alıcı bu kadar dakika içinde yanıt vermezse teklif düşer ve her "
+                            "şey göndericiye döner.",
+        'cap_small': "Bir küçük geminin taşıdığı yük birimi.",
+        'cap_medium': "Bir orta geminin taşıdığı yük birimi.",
+        'cap_large': "Bir büyük geminin taşıdığı yük birimi.",
+        'cap_caravan': "Bir kervanın taşıdığı yük birimi. Bir ülkenin kaç kervanı olduğu "
+                       "varlıklarından biridir.",
+        'caravan_cost': "Sefere çıkan her kervan için alınan para. Kervanın kendisi konvoy "
+                        "vardığında geri döner.",
+    },
+}
+
+
+def toll_keys():
+    """One setting per chokepoint the map currently has, in map order.
+
+    Read from the map rather than from CONFIG_DEFAULTS so a strait an admin
+    draws gets a priceable row, and a strait they delete stops showing one.
+    """
+    return tuple('toll_' + nid for nid in trade_map.chokepoints())
+
+
+def config_keys(section):
+    """The settings filed under one section."""
+    if section == 'toll':
+        return toll_keys()
+    for key, keys in CONFIG_SECTIONS:
+        if key == section:
+            return keys
+    return ()
+
+
+def config_label(key):
+    """A setting's name. A toll is named after the chokepoint it is charged at."""
+    named = CONFIG_LABELS[_lang].get(key)
+    if named:
+        return named
+    if key.startswith('toll_'):
+        nid = key[len('toll_'):]
+        mode = trade_map.mode_of(nid)
+        if mode:
+            return _t('cfg_toll_label', node=trade_map.name(nid, _lang))
+    return key
+
+
+def config_help(key):
+    helped = CONFIG_HELP[_lang].get(key)
+    if helped:
+        return helped
+    if key.startswith('toll_'):
+        return _t('cfg_toll_help')
+    return ''
+
 
 # Tradeable resources come from the asset catalog, so a resource an admin adds
 # in-game can be shipped without a code change. The catalog key doubles as the
@@ -87,6 +242,18 @@ SHIPS = (
 )
 SHIP_BY_CODE = {c: col for c, col, _ in SHIPS}
 
+# The land fleet, in the same shape. A caravan is an owned unit like a ship: a
+# country has a stock of them, a convoy takes some out and brings them back.
+CARAVANS = (('c', 'caravans', 'cap_caravan'),)
+
+# Which vehicles a mode may use, so capacity, escrow and the picker all read
+# from one table instead of three separate 'if mode == sea' branches.
+VEHICLES = {'sea': SHIPS, 'land': CARAVANS}
+VEH_BY_CODE = {code: col for table in VEHICLES.values() for code, col, _ in table}
+CAP_KEY = {col: cap for table in VEHICLES.values() for _, col, cap in table}
+
+# Fallback names only. Every vehicle is a catalog type now, so _veh_name()
+# prefers the catalog's label and an admin's rename shows up here too.
 VEH_NAMES = {
     'fa': {'small_ships': '⛵ کشتی کوچک', 'medium_ships': '🚢 کشتی متوسط',
            'large_ships': '🛳 کشتی بزرگ', 'caravans': '🐫 کاروان'},
@@ -95,6 +262,17 @@ VEH_NAMES = {
     'tr': {'small_ships': '⛵ Küçük Gemi', 'medium_ships': '🚢 Orta Gemi',
            'large_ships': '🛳 Büyük Gemi', 'caravans': '🐫 Kervan'},
 }
+
+
+def _veh_name(col):
+    label = asset_catalog.label(col, _lang)
+    return label if label != col else VEH_NAMES[_lang].get(col, col)
+
+
+def _veh_capacity(col):
+    """How much cargo one of these carries, straight from the trade config."""
+    key = CAP_KEY.get(col)
+    return cfg(key) if key else 0
 
 # ---------------------------------------------------------------------------
 # Strings (fa is the primary language; key sets asserted identical in init())
@@ -124,10 +302,11 @@ STRINGS = {
         'bad_number': "مقدار وارد شده معتبر نیست. لطفا یک عدد وارد کنید.",
         'too_much': "بیشتر از موجودی شماست (موجودی: {bal}).",
         'need_goods': "حداقل یک کالا انتخاب کنید.",
-        'veh_title_sea': "⚓️ ناوگان تجاری را انتخاب کنید:\n<blockquote>{lines}</blockquote>📦 حجم بار: {vol}\n🚢 ظرفیت ناوگان: {cap}",
-        'veh_title_land': "🐫 کاروان تجاری را آماده کنید:\n<blockquote>{lines}</blockquote>📦 حجم بار: {vol}\n🐫 ظرفیت کاروان‌ها: {cap}\nظرفیت هر کاروان: {c} | هزینه هر کاروان: {p} پول",
-        'ask_vcount': "تعداد {v} را وارد کنید (در اختیار: {bal}):",
-        'ask_caravans': "تعداد کاروان را وارد کنید (هزینه هر کاروان {p} پول):",
+        'veh_title_sea': "⚓️ ناوگان تجاری را انتخاب کنید:\n<blockquote>{fleet}</blockquote>\n🧾 انتخاب شما:\n<blockquote>{lines}</blockquote>📦 حجم بار: {vol}\n🚢 ظرفیت ناوگان: {cap}",
+        'veh_title_land': "🐫 کاروان تجاری را آماده کنید:\n<blockquote>{fleet}</blockquote>\n🧾 انتخاب شما:\n<blockquote>{lines}</blockquote>📦 حجم بار: {vol}\n🐫 ظرفیت کاروان‌ها: {cap}\n💵 هزینه هر کاروان در این سفر: {p} پول",
+        'ask_vcount': "تعداد {v} را وارد کنید (در اختیار: {bal} | ظرفیت هرکدام: {cap}):",
+        'veh_row': "{name}: ظرفیت هرکدام {cap} — در اختیار شما {own}",
+        'ask_caravans': "تعداد کاروان را وارد کنید (در اختیار: {bal} | ظرفیت هرکدام: {cap} | هزینه هر کاروان {p} پول):",
         'not_enough_units': "بیشتر از تعداد موجود است (موجودی: {bal}).",
         'not_enough_cap': "ظرفیت کافی نیست! حجم بار {vol} است اما ظرفیت فقط {cap}.",
         'btn_veh_done': "🗺 محاسبه مسیرها",
@@ -183,9 +362,24 @@ STRINGS = {
         'adm_pick_group': "گروه را انتخاب کنید:",
         'adm_pick_node': "موقعیت {mode} را برای {g} انتخاب کنید:",
         'home_set': "🏠 موقعیت {mode} گروه {g} روی «{node}» تنظیم شد.",
-        'cfg_title': "⚙️ تنظیمات تجارت (صفحه {p}) — برای تغییر روی هر مورد بزنید:",
-        'cfg_ask': "مقدار جدید برای {key} را وارد کنید (فعلی: {val}):",
-        'cfg_set': "✅ {key} روی {val} تنظیم شد.",
+        'cfg_home': "⚙️ تنظیمات تجارت — کدام دسته را می‌خواهید ببینید؟",
+        'cfg_sec_journey': "⏱ سفر و کرایه ({n} مورد)",
+        'cfg_sec_capacity': "📦 ظرفیت و هزینه وسایل حمل ({n} مورد)",
+        'cfg_sec_toll': "🛣 عوارض گذرگاه‌ها ({n} مورد)",
+        'cfg_sec_name_journey': "سفر و کرایه",
+        'cfg_sec_name_capacity': "ظرفیت و هزینه وسایل حمل",
+        'cfg_sec_name_toll': "عوارض گذرگاه‌ها",
+        'cfg_sec_empty': "در این دسته چیزی برای تنظیم نیست.",
+        'cfg_title': "⚙️ تنظیمات تجارت — {section} (صفحه {p} از {n})\n"
+                     "برای تغییر، روی دکمه همان مورد بزنید:",
+        'cfg_row': "<b>{name}</b> — الان: <code>{val}</code>\n<blockquote>{help}</blockquote>",
+        'cfg_ask': "<b>{name}</b>\n<blockquote>{help}</blockquote>\n"
+                   "مقدار فعلی: {val}\nمقدار جدید را بفرستید:",
+        'cfg_set': "✅ {name} روی {val} تنظیم شد.",
+        'cfg_toll_label': "🛣 عوارض {node}",
+        'cfg_toll_help': "هر محموله‌ای که از این گذرگاه رد شود چقدر عوارض بدهد. "
+                         "کشوری که مالک گذرگاه است رایگان رد می‌شود.",
+        'btn_cfg_back': "🔙 دسته‌های تنظیمات",
         # RTL: the leading glyph renders on the right, so "previous" points
         # right and "next" points left — mirrored from the LTR languages.
         'btn_prev': "➡️ قبلی",
@@ -197,14 +391,40 @@ STRINGS = {
         'dur_m': "{m} دقیقه",
         'wizard_cancelled': "🚫 تجارت لغو شد.",
         'btn_photo': "🖼 عکس تجارت",
-        'ph_title': "🖼 عکس پیام‌های تجارت — وضعیت فعلی: {state}\n"
+        'btn_ph_mode_sea': "🚢 عکس تجارت دریایی — {state}",
+        'btn_ph_mode_land': "🐫 عکس تجارت زمینی — {state}",
+        'btn_ph_mode_both': "🖼 عکس مشترک (پیش‌فرض) — {state}",
+        'btn_ph_back': "🔙 بازگشت به عکس‌ها",
+        'ph_home': "🖼 عکس تجارت — کدام را می‌خواهید تنظیم کنید؟\n"
+                   "هر نوع تجارت عکس خودش را دارد؛ اگر نداشته باشد، عکس مشترک استفاده می‌شود.",
+        'ph_mode_sea': "تجارت دریایی",
+        'ph_mode_land': "تجارت زمینی",
+        'ph_mode_both': "عکس مشترک",
+        'ph_shared': "از عکس مشترک استفاده می‌کند",
+        'btn_trade_modes': "🚧 باز/بسته کردن تجارت کشورها",
+        'tm_title': "🚧 تجارت هر کشور (صفحه {p} از {n}) — برای تغییر روی کشور بزنید:",
+        'tm_group': "🚧 <b>{g}</b>\n<blockquote>{lines}</blockquote>",
+        'tm_row': "{mode}: {state}",
+        'tm_on': "{mode}✅",
+        'tm_off': "{mode}🚫",
+        'tm_state_on': "باز",
+        'tm_state_off': "بسته",
+        'btn_tm_close': "🚫 بستن {mode}",
+        'btn_tm_open': "✅ باز کردن {mode}",
+        'btn_tm_back': "🔙 فهرست کشورها",
+        'tm_toggled': "{mode} حالا {state} است.",
+        'tm_closed_here': "🚫 {mode} برای کشور شما بسته است.",
+        'tm_closed_there': "🚫 {mode} برای {g} بسته است.",
+        'tm_all_closed': "🚫 هر دو نوع تجارت برای کشور شما بسته است. با مدیریت صحبت کنید.",
+        'adm_no_groups': "هیچ کشوری ثبت نشده است.",
+        'ph_title': "🖼 عکس {mode} — وضعیت فعلی: {state}\n"
                     "این عکس روی پیشنهاد تجارت، پیام رهگیری محموله و اعلان‌های کانال قرار می‌گیرد.",
         'ph_set': "تنظیم شده",
         'ph_unset': "تنظیم نشده",
         'btn_ph_set': "📷 تنظیم عکس",
         'btn_ph_clear': "🗑 حذف عکس",
-        'ph_ask': "اکنون عکس مورد نظر را بفرستید:",
-        'ph_saved': "✅ عکس تجارت ذخیره شد.",
+        'ph_ask': "اکنون عکس {mode} را بفرستید:",
+        'ph_saved': "✅ عکس {mode} ذخیره شد.",
         'ph_cleared': "🗑 عکس تجارت حذف شد؛ پیام‌ها دوباره متنی می‌شوند.",
         'ph_not_photo': "این پیام عکس نیست؛ عملیات لغو شد.",
     },
@@ -232,10 +452,11 @@ STRINGS = {
         'bad_number': "That is not a valid number. Please enter an integer.",
         'too_much': "That is more than you have (balance: {bal}).",
         'need_goods': "Select at least one good.",
-        'veh_title_sea': "⚓️ Choose your trade fleet:\n<blockquote>{lines}</blockquote>📦 Cargo volume: {vol}\n🚢 Fleet capacity: {cap}",
-        'veh_title_land': "🐫 Prepare your caravan:\n<blockquote>{lines}</blockquote>📦 Cargo volume: {vol}\n🐫 Caravan capacity: {cap}\nCapacity per caravan: {c} | Cost per caravan: {p} money",
-        'ask_vcount': "Enter the number of {v} (you own: {bal}):",
-        'ask_caravans': "Enter the number of caravans (each costs {p} money):",
+        'veh_title_sea': "⚓️ Choose your trade fleet:\n<blockquote>{fleet}</blockquote>\n🧾 Your picks:\n<blockquote>{lines}</blockquote>📦 Cargo volume: {vol}\n🚢 Fleet capacity: {cap}",
+        'veh_title_land': "🐫 Prepare your caravan:\n<blockquote>{fleet}</blockquote>\n🧾 Your picks:\n<blockquote>{lines}</blockquote>📦 Cargo volume: {vol}\n🐫 Caravan capacity: {cap}\n💵 Cost per caravan for this trip: {p} money",
+        'ask_vcount': "Enter the number of {v} (you own: {bal} | each carries: {cap}):",
+        'veh_row': "{name}: carries {cap} each — you own {own}",
+        'ask_caravans': "Enter the number of caravans (you own: {bal} | each carries: {cap} | each costs {p} money):",
         'not_enough_units': "That is more than you own (you have: {bal}).",
         'not_enough_cap': "Not enough capacity! Cargo volume is {vol} but capacity is only {cap}.",
         'btn_veh_done': "🗺 Compute routes",
@@ -291,9 +512,24 @@ STRINGS = {
         'adm_pick_group': "Choose a group:",
         'adm_pick_node': "Choose the {mode} location for {g}:",
         'home_set': "🏠 The {mode} location of {g} was set to «{node}».",
-        'cfg_title': "⚙️ Trade settings (page {p}) — tap an entry to change it:",
-        'cfg_ask': "Enter the new value for {key} (current: {val}):",
-        'cfg_set': "✅ {key} was set to {val}.",
+        'cfg_home': "⚙️ Trade settings — which group do you want?",
+        'cfg_sec_journey': "⏱ Journeys and fees ({n})",
+        'cfg_sec_capacity': "📦 Vehicle capacity and cost ({n})",
+        'cfg_sec_toll': "🛣 Chokepoint tolls ({n})",
+        'cfg_sec_name_journey': "journeys and fees",
+        'cfg_sec_name_capacity': "vehicle capacity and cost",
+        'cfg_sec_name_toll': "chokepoint tolls",
+        'cfg_sec_empty': "There is nothing to set in this group.",
+        'cfg_title': "⚙️ Trade settings — {section} (page {p} of {n})\n"
+                     "Tap a setting's button to change it:",
+        'cfg_row': "<b>{name}</b> — now: <code>{val}</code>\n<blockquote>{help}</blockquote>",
+        'cfg_ask': "<b>{name}</b>\n<blockquote>{help}</blockquote>\n"
+                   "Current value: {val}\nSend the new one:",
+        'cfg_set': "✅ {name} was set to {val}.",
+        'cfg_toll_label': "🛣 Toll at {node}",
+        'cfg_toll_help': "What every convoy passing this chokepoint pays. The "
+                         "country that owns it passes for free.",
+        'btn_cfg_back': "🔙 Setting groups",
         'btn_prev': "⬅️ Prev",
         'btn_next': "Next ➡️",
         'path_arrow': " → ",
@@ -301,15 +537,41 @@ STRINGS = {
         'dur_m': "{m} minutes",
         'wizard_cancelled': "🚫 Trade cancelled.",
         'btn_photo': "🖼 Trade photo",
-        'ph_title': "🖼 Photo for trade messages — currently: {state}\n"
+        'btn_ph_mode_sea': "🚢 Sea trade photo — {state}",
+        'btn_ph_mode_land': "🐫 Land trade photo — {state}",
+        'btn_ph_mode_both': "🖼 Shared photo (fallback) — {state}",
+        'btn_ph_back': "🔙 Back to photos",
+        'ph_home': "🖼 Trade photo — which one do you want to set?\n"
+                   "Each kind of trade has its own; without one it uses the shared photo.",
+        'ph_mode_sea': "sea trade",
+        'ph_mode_land': "land trade",
+        'ph_mode_both': "the shared photo",
+        'ph_shared': "using the shared photo",
+        'btn_trade_modes': "🚧 Open/close a country's trade",
+        'tm_title': "🚧 Trade per country (page {p} of {n}) — tap a country to change it:",
+        'tm_group': "🚧 <b>{g}</b>\n<blockquote>{lines}</blockquote>",
+        'tm_row': "{mode}: {state}",
+        'tm_on': "{mode}✅",
+        'tm_off': "{mode}🚫",
+        'tm_state_on': "open",
+        'tm_state_off': "closed",
+        'btn_tm_close': "🚫 Close {mode}",
+        'btn_tm_open': "✅ Open {mode}",
+        'btn_tm_back': "🔙 Country list",
+        'tm_toggled': "{mode} is now {state}.",
+        'tm_closed_here': "🚫 {mode} is closed for your country.",
+        'tm_closed_there': "🚫 {mode} is closed for {g}.",
+        'tm_all_closed': "🚫 Both kinds of trade are closed for your country. Talk to an admin.",
+        'adm_no_groups': "No country is registered yet.",
+        'ph_title': "🖼 Photo for {mode} — currently: {state}\n"
                     "It is attached to the trade offer, the convoy tracking message "
                     "and the channel announcements.",
         'ph_set': "set",
         'ph_unset': "not set",
         'btn_ph_set': "📷 Set photo",
         'btn_ph_clear': "🗑 Remove photo",
-        'ph_ask': "Send the photo now:",
-        'ph_saved': "✅ The trade photo was saved.",
+        'ph_ask': "Send the photo for {mode} now:",
+        'ph_saved': "✅ The photo for {mode} was saved.",
         'ph_cleared': "🗑 The trade photo was removed; messages go back to plain text.",
         'ph_not_photo': "That message is not a photo; the operation was cancelled.",
     },
@@ -337,10 +599,11 @@ STRINGS = {
         'bad_number': "Geçersiz sayı. Lütfen bir tam sayı girin.",
         'too_much': "Sahip olduğunuzdan fazla (mevcut: {bal}).",
         'need_goods': "En az bir mal seçin.",
-        'veh_title_sea': "⚓️ Ticaret filonuzu seçin:\n<blockquote>{lines}</blockquote>📦 Yük hacmi: {vol}\n🚢 Filo kapasitesi: {cap}",
-        'veh_title_land': "🐫 Kervanınızı hazırlayın:\n<blockquote>{lines}</blockquote>📦 Yük hacmi: {vol}\n🐫 Kervan kapasitesi: {cap}\nKervan başına kapasite: {c} | Kervan başına maliyet: {p} para",
-        'ask_vcount': "{v} sayısını girin (sahip olduğunuz: {bal}):",
-        'ask_caravans': "Kervan sayısını girin (her biri {p} para):",
+        'veh_title_sea': "⚓️ Ticaret filonuzu seçin:\n<blockquote>{fleet}</blockquote>\n🧾 Seçiminiz:\n<blockquote>{lines}</blockquote>📦 Yük hacmi: {vol}\n🚢 Filo kapasitesi: {cap}",
+        'veh_title_land': "🐫 Kervanınızı hazırlayın:\n<blockquote>{fleet}</blockquote>\n🧾 Seçiminiz:\n<blockquote>{lines}</blockquote>📦 Yük hacmi: {vol}\n🐫 Kervan kapasitesi: {cap}\n💵 Bu sefer için kervan başına maliyet: {p} para",
+        'ask_vcount': "{v} sayısını girin (sahip olduğunuz: {bal} | her biri {cap} taşır):",
+        'veh_row': "{name}: her biri {cap} taşır — sahip olduğunuz {own}",
+        'ask_caravans': "Kervan sayısını girin (sahip olduğunuz: {bal} | her biri {cap} taşır | her biri {p} para):",
         'not_enough_units': "Sahip olduğunuzdan fazla (mevcut: {bal}).",
         'not_enough_cap': "Kapasite yetersiz! Yük hacmi {vol} ama kapasite yalnızca {cap}.",
         'btn_veh_done': "🗺 Rotaları hesapla",
@@ -396,9 +659,24 @@ STRINGS = {
         'adm_pick_group': "Bir grup seçin:",
         'adm_pick_node': "{g} için {mode} konumunu seçin:",
         'home_set': "🏠 {g} grubunun {mode} konumu «{node}» olarak ayarlandı.",
-        'cfg_title': "⚙️ Ticaret ayarları (sayfa {p}) — değiştirmek için bir girdiye dokunun:",
-        'cfg_ask': "{key} için yeni değeri girin (mevcut: {val}):",
-        'cfg_set': "✅ {key} değeri {val} olarak ayarlandı.",
+        'cfg_home': "⚙️ Ticaret ayarları — hangi grubu görmek istiyorsunuz?",
+        'cfg_sec_journey': "⏱ Yolculuk ve ücretler ({n})",
+        'cfg_sec_capacity': "📦 Araç kapasitesi ve maliyeti ({n})",
+        'cfg_sec_toll': "🛣 Geçit ücretleri ({n})",
+        'cfg_sec_name_journey': "yolculuk ve ücretler",
+        'cfg_sec_name_capacity': "araç kapasitesi ve maliyeti",
+        'cfg_sec_name_toll': "geçit ücretleri",
+        'cfg_sec_empty': "Bu grupta ayarlanacak bir şey yok.",
+        'cfg_title': "⚙️ Ticaret ayarları — {section} (sayfa {p}/{n})\n"
+                     "Değiştirmek için ilgili düğmeye dokunun:",
+        'cfg_row': "<b>{name}</b> — şu an: <code>{val}</code>\n<blockquote>{help}</blockquote>",
+        'cfg_ask': "<b>{name}</b>\n<blockquote>{help}</blockquote>\n"
+                   "Mevcut değer: {val}\nYenisini gönderin:",
+        'cfg_set': "✅ {name} değeri {val} olarak ayarlandı.",
+        'cfg_toll_label': "🛣 {node} geçit ücreti",
+        'cfg_toll_help': "Bu geçitten geçen her konvoyun ödediği ücret. Geçidin "
+                         "sahibi olan ülke bedava geçer.",
+        'btn_cfg_back': "🔙 Ayar grupları",
         'btn_prev': "⬅️ Önceki",
         'btn_next': "Sonraki ➡️",
         'path_arrow': " → ",
@@ -406,14 +684,40 @@ STRINGS = {
         'dur_m': "{m} dakika",
         'wizard_cancelled': "🚫 Ticaret iptal edildi.",
         'btn_photo': "🖼 Ticaret fotoğrafı",
-        'ph_title': "🖼 Ticaret mesajlarının fotoğrafı — şu an: {state}\n"
+        'btn_ph_mode_sea': "🚢 Deniz ticareti fotoğrafı — {state}",
+        'btn_ph_mode_land': "🐫 Kara ticareti fotoğrafı — {state}",
+        'btn_ph_mode_both': "🖼 Ortak fotoğraf (yedek) — {state}",
+        'btn_ph_back': "🔙 Fotoğraflara dön",
+        'ph_home': "🖼 Ticaret fotoğrafı — hangisini ayarlamak istiyorsunuz?\n"
+                   "Her ticaret türünün kendi fotoğrafı vardır; yoksa ortak fotoğraf kullanılır.",
+        'ph_mode_sea': "deniz ticareti",
+        'ph_mode_land': "kara ticareti",
+        'ph_mode_both': "ortak fotoğraf",
+        'ph_shared': "ortak fotoğrafı kullanıyor",
+        'btn_trade_modes': "🚧 Ülke ticaretini aç/kapat",
+        'tm_title': "🚧 Ülke bazında ticaret (sayfa {p}/{n}) — değiştirmek için bir ülkeye dokunun:",
+        'tm_group': "🚧 <b>{g}</b>\n<blockquote>{lines}</blockquote>",
+        'tm_row': "{mode}: {state}",
+        'tm_on': "{mode}✅",
+        'tm_off': "{mode}🚫",
+        'tm_state_on': "açık",
+        'tm_state_off': "kapalı",
+        'btn_tm_close': "🚫 {mode} kapat",
+        'btn_tm_open': "✅ {mode} aç",
+        'btn_tm_back': "🔙 Ülke listesi",
+        'tm_toggled': "{mode} artık {state}.",
+        'tm_closed_here': "🚫 Ülkeniz için {mode} kapalı.",
+        'tm_closed_there': "🚫 {g} için {mode} kapalı.",
+        'tm_all_closed': "🚫 Ülkeniz için her iki ticaret türü de kapalı. Bir yöneticiyle konuşun.",
+        'adm_no_groups': "Henüz kayıtlı bir ülke yok.",
+        'ph_title': "🖼 {mode} fotoğrafı — şu an: {state}\n"
                     "Ticaret teklifine, konvoy takip mesajına ve kanal duyurularına eklenir.",
         'ph_set': "ayarlandı",
         'ph_unset': "ayarlanmadı",
         'btn_ph_set': "📷 Fotoğrafı ayarla",
         'btn_ph_clear': "🗑 Fotoğrafı kaldır",
-        'ph_ask': "Fotoğrafı şimdi gönderin:",
-        'ph_saved': "✅ Ticaret fotoğrafı kaydedildi.",
+        'ph_ask': "{mode} için fotoğrafı şimdi gönderin:",
+        'ph_saved': "✅ {mode} fotoğrafı kaydedildi.",
         'ph_cleared': "🗑 Ticaret fotoğrafı kaldırıldı; mesajlar yeniden düz metin olacak.",
         'ph_not_photo': "Bu mesaj bir fotoğraf değil; işlem iptal edildi.",
     },
@@ -463,6 +767,14 @@ def _migrate():
                 _conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT ''")
             except sqlite3.OperationalError:
                 pass  # column already exists
+        # Which of a country's two routes an admin has closed. Absent means open,
+        # so nothing has to be written for the countries that trade both ways.
+        _conn.execute('''CREATE TABLE IF NOT EXISTS group_trade_modes (
+            group_id INTEGER NOT NULL,
+            mode     TEXT NOT NULL,
+            open     INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (group_id, mode)
+        )''')
         _conn.execute('''CREATE TABLE IF NOT EXISTS trades (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sender_group_id   INTEGER NOT NULL,
@@ -528,33 +840,57 @@ def set_cfg(key, value):
 
 # Telegram rejects captions longer than this, so long bodies stay text-only.
 CAPTION_LIMIT = 1024
+# The photo a sea convoy is announced with, the one a land convoy gets, and the
+# single photo that predates the split. A mode with no photo of its own falls
+# back to the shared one, so an existing install keeps the picture it had until
+# somebody sets a sea or land one deliberately.
 PHOTO_KEY = 'trade_photo'
+PHOTO_KEYS = {'sea': 'trade_photo_sea', 'land': 'trade_photo_land'}
+PHOTO_MODES = ('sea', 'land')
 
 
-def photo():
-    """file_id of the admin-chosen trade photo, or '' when none is set."""
+def _setting(key):
     with _lock:
-        row = _conn.execute("SELECT value FROM trade_settings WHERE key=?", (PHOTO_KEY,)).fetchone()
+        row = _conn.execute("SELECT value FROM trade_settings WHERE key=?", (key,)).fetchone()
     return row[0] if row else ''
 
 
-def set_photo(file_id):
+def photo(mode=None):
+    """file_id of the trade photo for one mode, or '' when none is set.
+
+    With no mode — or for a mode nobody has given a photo of its own — this is
+    the shared photo, which is what every announcement used before the split.
+    """
+    if mode in PHOTO_KEYS:
+        own = _setting(PHOTO_KEYS[mode])
+        if own:
+            return own
+    return _setting(PHOTO_KEY)
+
+
+def own_photo(mode):
+    """The photo set for this mode specifically, ignoring the shared fallback."""
+    return _setting(PHOTO_KEYS[mode]) if mode in PHOTO_KEYS else _setting(PHOTO_KEY)
+
+
+def set_photo(file_id, mode=None):
+    key = PHOTO_KEYS.get(mode, PHOTO_KEY)
     with _lock:
         if file_id:
             _conn.execute("INSERT OR REPLACE INTO trade_settings (key, value) VALUES (?, ?)",
-                          (PHOTO_KEY, str(file_id)))
+                          (key, str(file_id)))
         else:
-            _conn.execute("DELETE FROM trade_settings WHERE key=?", (PHOTO_KEY,))
+            _conn.execute("DELETE FROM trade_settings WHERE key=?", (key,))
         _conn.commit()
 
 
-def _send_rich(chat_id, text, **kwargs):
+def _send_rich(chat_id, text, mode=None, **kwargs):
     """Send text as a photo caption when a trade photo is set and it fits.
 
     Returns (message, used_photo) so the caller can record how the message was
     sent — editing it later has to match.
     """
-    file_id = photo()
+    file_id = photo(mode)
     if file_id and len(text) <= CAPTION_LIMIT:
         try:
             return _bot.send_photo(chat_id, file_id, caption=text, **kwargs), True
@@ -813,7 +1149,7 @@ def _escrow(group_id, goods, vehicles, fee):
     need = dict(goods)
     need['money'] = need.get('money', 0) + fee
     for col, n in vehicles.items():
-        if col != 'caravans' and n:
+        if n:
             need[col] = need.get(col, 0) + n
     cols = list(need)
     with _lock:
@@ -829,7 +1165,7 @@ def _escrow(group_id, goods, vehicles, fee):
 
 
 def _give(group_id, amounts):
-    amounts = {c: n for c, n in amounts.items() if c != 'caravans' and n}
+    amounts = {c: n for c, n in amounts.items() if n}
     if not amounts:
         return
     cols = list(amounts)
@@ -843,7 +1179,7 @@ def _refund(trade):
     back = dict(json.loads(trade['goods']))
     back['money'] = back.get('money', 0) + trade['fee_paid']
     for col, n in json.loads(trade['vehicles']).items():
-        if col != 'caravans' and n:
+        if n:
             back[col] = back.get(col, 0) + n
     _give(trade['sender_group_id'], back)
 
@@ -866,7 +1202,7 @@ def active_goods_keys():
     for row in _q(f"SELECT goods, vehicles FROM trades WHERE status IN ({placeholders})",
                   LIVE_STATUSES):
         keys.update(json.loads(row['goods']))
-        keys.update(col for col in json.loads(row['vehicles']) if col != 'caravans')
+        keys.update(json.loads(row['vehicles']))
     keys.add('money')  # every live trade holds an escrowed fee
     return keys
 
@@ -943,8 +1279,10 @@ def handle_callback(call):
             _home_pick_node(call, parts[2], int(parts[3]))
         elif op == 'h':
             _home_set(call, parts[2], int(parts[3]), parts[4])
+        elif op == 'cfgh':
+            _config_home(call)
         elif op == 'cfg':
-            _config_menu(call, int(parts[2]))
+            _config_menu(call, parts[2], int(parts[3]))
         elif op == 'ck':
             _ask_cfg(call, parts[2])
         elif op == 'ow':
@@ -955,10 +1293,18 @@ def handle_callback(call):
             _owner_set(call, parts[2], int(parts[3]))
         elif op == 'ph':
             _photo_menu(call)
+        elif op == 'phm':
+            _photo_mode_menu(call, parts[2])
         elif op == 'phs':
-            _photo_ask(call)
+            _photo_ask(call, parts[2])
         elif op == 'phc':
-            _photo_clear(call)
+            _photo_clear(call, parts[2])
+        elif op == 'tm':
+            _mode_list(call, int(parts[2]))
+        elif op == 'tmg':
+            _mode_screen(call, int(parts[2]))
+        elif op == 'tmt':
+            _mode_toggle(call, int(parts[2]), parts[3])
         elif op in trade_map_admin.OPS:
             trade_map_admin.handle(call, parts)
         else:
@@ -990,8 +1336,15 @@ def _menu(call):
     if n:
         text += _t('menu_active', n=n)
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(types.InlineKeyboardButton(_t('btn_sea'), callback_data='trd:m:sea'),
-               types.InlineKeyboardButton(_t('btn_land'), callback_data='trd:m:land'))
+    # A route an admin closed for this country is not offered at all — a button
+    # that always refuses reads as a bug rather than as a rule.
+    buttons = [types.InlineKeyboardButton(_t('btn_' + mode), callback_data=f'trd:m:{mode}')
+               for mode in PHOTO_MODES if mode_open(chat_id, mode)]
+    if not buttons:
+        _bot.send_message(chat_id, _t('tm_all_closed'))
+        _answer(call)
+        return
+    markup.add(*buttons)
     _bot.send_message(chat_id, text, reply_markup=markup)
     _answer(call)
 
@@ -1002,14 +1355,22 @@ def _choose_mode(call, mode):
     if not _is_lord(chat_id, user_id):
         _answer(call, _t('not_lord'), alert=True)
         return
+    if not mode_open(chat_id, mode):
+        _answer(call)
+        _bot.send_message(chat_id, _t('tm_closed_here', mode=_mode_name(mode)))
+        return
     home_col = 'home_sea' if mode == 'sea' else 'home_land'
     lord = _lord_row(chat_id)
     if lord is None or not lord[home_col]:
         _answer(call)
         _bot.send_message(chat_id, _t('need_home', mode=_mode_name(mode)))
         return
-    dests = _q(f"SELECT DISTINCT group_id FROM users WHERE group_id != ? AND {home_col} != ''",
-               (chat_id,))
+    # A country whose route is closed cannot receive that way either, so it is
+    # left off the destination list rather than refusing at the last step.
+    dests = [d for d in
+             _q(f"SELECT DISTINCT group_id FROM users WHERE group_id != ? AND {home_col} != ''",
+                (chat_id,))
+             if mode_open(d['group_id'], mode)]
     if not dests:
         _answer(call)
         _bot.send_message(chat_id, _t('no_dest', mode=_mode_name(mode)))
@@ -1120,14 +1481,24 @@ def _goods_done(call):
 
 
 def _fleet_capacity(c):
-    if c['mode'] == 'sea':
-        return sum(c['vehicles'].get(col, 0) * cfg(cap_key) for _, col, cap_key in SHIPS)
-    return c['vehicles'].get('caravans', 0) * cfg('cap_caravan')
+    return sum(c['vehicles'].get(col, 0) * cfg(cap_key)
+               for _, col, cap_key in VEHICLES[c['mode']])
 
 
 def _veh_lines(vehicles):
-    lines = [f"• {VEH_NAMES[_lang][col]}: {n}" for col, n in vehicles.items() if n]
+    lines = [f"• {_veh_name(col)}: {n} × {_veh_capacity(col)} = {n * _veh_capacity(col)}"
+             for col, n in vehicles.items() if n]
     return '\n'.join(lines) if lines else '—'
+
+
+def _fleet_table(group_id, mode):
+    """One line per vehicle this mode can use: what it carries and how many
+    the country actually has. Capacity used to be invisible until the cargo
+    would not fit; now it is on the screen where the fleet is picked."""
+    return '\n'.join(
+        _t('veh_row', name=_veh_name(col), cap=_veh_capacity(col),
+           own=_balance(group_id, col))
+        for _code, col, _cap in VEHICLES[mode])
 
 
 def _send_vehicles_menu(user_id):
@@ -1137,20 +1508,18 @@ def _send_vehicles_menu(user_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     vol = sum(c['goods'].values())
     cap = _fleet_capacity(c)
+    buttons = []
+    for code, col, _cap in VEHICLES[c['mode']]:
+        n = c['vehicles'].get(col, 0)
+        label = _veh_name(col) + (f" ({n})" if n else "")
+        buttons.append(types.InlineKeyboardButton(label, callback_data=f'trd:v:{code}'))
+    markup.add(*buttons)
     if c['mode'] == 'sea':
-        buttons = []
-        for code, col, _cap in SHIPS:
-            n = c['vehicles'].get(col, 0)
-            label = VEH_NAMES[_lang][col] + (f" ({n})" if n else "")
-            buttons.append(types.InlineKeyboardButton(label, callback_data=f'trd:v:{code}'))
-        markup.add(*buttons)
-        text = _t('veh_title_sea', lines=_veh_lines(c['vehicles']), vol=vol, cap=cap)
+        text = _t('veh_title_sea', lines=_veh_lines(c['vehicles']), vol=vol, cap=cap,
+                  fleet=_fleet_table(c['chat_id'], 'sea'))
     else:
-        n = c['vehicles'].get('caravans', 0)
-        label = VEH_NAMES[_lang]['caravans'] + (f" ({n})" if n else "")
-        markup.add(types.InlineKeyboardButton(label, callback_data='trd:v:c'))
         text = _t('veh_title_land', lines=_veh_lines(c['vehicles']), vol=vol, cap=cap,
-                  c=cfg('cap_caravan'), p=cfg('caravan_cost'))
+                  fleet=_fleet_table(c['chat_id'], 'land'), p=cfg('caravan_cost'))
     markup.add(types.InlineKeyboardButton(_t('btn_veh_done'), callback_data='trd:vok'),
                types.InlineKeyboardButton(_t('btn_cancel'), callback_data='trd:x'))
     _bot.send_message(c['chat_id'], text, reply_markup=markup, parse_mode='HTML')
@@ -1162,17 +1531,19 @@ def _ask_vcount(call, code):
         return
     user_id = call.from_user.id
     _answer(call)
-    if code == 'c':
-        col = 'caravans'
-        _bot.send_message(c['chat_id'], _t('ask_caravans', p=cfg('caravan_cost')))
-    else:
-        col = SHIP_BY_CODE.get(code)
-        if not col:
-            _answer(call, _t('err_generic'))
-            return
-        bal = _balance(c['chat_id'], col)
+    col = VEH_BY_CODE.get(code)
+    if not col or col not in [v[1] for v in VEHICLES[c['mode']]]:
+        _answer(call, _t('err_generic'))
+        return
+    bal = _balance(c['chat_id'], col)
+    if col == 'caravans':
         _bot.send_message(c['chat_id'],
-                          _t('ask_vcount', v=VEH_NAMES[_lang][col], bal=bal))
+                          _t('ask_caravans', bal=bal, cap=_veh_capacity(col),
+                             p=cfg('caravan_cost')))
+    else:
+        _bot.send_message(c['chat_id'],
+                          _t('ask_vcount', v=_veh_name(col), bal=bal,
+                             cap=_veh_capacity(col)))
 
     def on_count(msg):
         cc = _ctx.get(user_id)
@@ -1186,7 +1557,7 @@ def _ask_vcount(call, code):
             return
         if val < 0:
             _bot.send_message(cc['chat_id'], _t('bad_number'))
-        elif col != 'caravans' and val > _balance(cc['chat_id'], col):
+        elif val > _balance(cc['chat_id'], col):
             _bot.send_message(cc['chat_id'],
                               _t('not_enough_units', bal=_balance(cc['chat_id'], col)))
         elif val == 0:
@@ -1257,7 +1628,7 @@ def _route_chosen(call, i):
     c['route_i'] = i
     r = c['routes'][i]
     mode = c['mode']
-    veh = ', '.join(f"{n}× {VEH_NAMES[_lang][col]}" for col, n in c['vehicles'].items() if n)
+    veh = ', '.join(f"{n}× {_veh_name(col)}" for col, n in c['vehicles'].items() if n)
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton(_t('btn_send'), callback_data='trd:go'),
                types.InlineKeyboardButton(_t('btn_cancel'), callback_data='trd:x'))
@@ -1284,6 +1655,17 @@ def _confirm_send(call):
     receiver = _lord_row(c['dest'])
     if receiver is None:
         _answer(call, _t('err_generic'))
+        return
+    # Re-checked here rather than trusted from the picker: an admin can close a
+    # route while a lord is halfway through loading a convoy.
+    if not mode_open(c['chat_id'], c['mode']):
+        _answer(call)
+        _bot.send_message(c['chat_id'], _t('tm_closed_here', mode=_mode_name(c['mode'])))
+        return
+    if not mode_open(c['dest'], c['mode']):
+        _answer(call)
+        _bot.send_message(c['chat_id'], _t('tm_closed_there', mode=_mode_name(c['mode']),
+                                           g=_esc(_title(c['dest']))), parse_mode='HTML')
         return
     if not _escrow(c['chat_id'], c['goods'], c['vehicles'], fee):
         _answer(call)
@@ -1315,8 +1697,8 @@ def _confirm_send(call):
                     path=_path_names(c['mode'], r['path']),
                     dur=_dur(r['minutes']), exp=cfg('offer_expiry_min'))
     try:
-        sent, with_photo = _send_rich(c['dest'], offer_text, reply_markup=markup,
-                                      parse_mode='HTML')
+        sent, with_photo = _send_rich(c['dest'], offer_text, mode=c['mode'],
+                                      reply_markup=markup, parse_mode='HTML')
     except Exception:
         _refund(trade)
         _exec("UPDATE trades SET status='cancelled' WHERE id=?", (tid,))
@@ -1392,7 +1774,7 @@ def _accept(call, tid):
     # live tracking message in the sender's group
     try:
         sent, with_photo = _send_rich(trade['sender_group_id'], _track_text(trade),
-                                      parse_mode='HTML')
+                                      mode=trade['mode'], parse_mode='HTML')
         _exec("UPDATE trades SET track_chat_id=?, track_msg_id=?, track_photo=? WHERE id=?",
               (sent.chat.id, sent.message_id, 1 if with_photo else 0, tid))
     except Exception:
@@ -1400,7 +1782,7 @@ def _accept(call, tid):
     # channel announcement
     route = json.loads(trade['route'])
     try:
-        _send_rich(_CHANNEL,
+        _send_rich(_CHANNEL, mode=trade['mode'], text=
                    _t('depart_channel', emoji=_mode_emoji(trade['mode']),
                       src_g=_esc(_title(trade['sender_group_id'])),
                       dst_g=_esc(_title(trade['receiver_group_id'])),
@@ -1496,7 +1878,8 @@ def _edit_tracking(trade):
     except Exception:
         # tracking message gone (deleted?) -> try a fresh one
         try:
-            sent, with_photo = _send_rich(trade['track_chat_id'], text, parse_mode='HTML')
+            sent, with_photo = _send_rich(trade['track_chat_id'], text,
+                                          mode=trade['mode'], parse_mode='HTML')
             _exec("UPDATE trades SET track_msg_id=?, track_photo=? WHERE id=?",
                   (sent.message_id, 1 if with_photo else 0, trade['id']))
         except Exception:
@@ -1545,7 +1928,7 @@ def _arrive(trade):
     except Exception:
         pass
     try:
-        _send_rich(_CHANNEL,
+        _send_rich(_CHANNEL, mode=trade['mode'], text=
                    _t('arrive_channel', emoji=_mode_emoji(trade['mode']),
                       src_g=_esc(_title(trade['sender_group_id'])),
                       dst_g=_esc(_title(trade['receiver_group_id']))),
@@ -1654,52 +2037,178 @@ def _admin_menu(call):
                types.InlineKeyboardButton(_t('btn_home_land'), callback_data='trd:hm:l'),
                types.InlineKeyboardButton(_t('btn_owners'), callback_data='trd:ow:0'),
                types.InlineKeyboardButton(_t('btn_map'), callback_data='trd:map'),
-               types.InlineKeyboardButton(_t('btn_cfg'), callback_data='trd:cfg:0'),
+               types.InlineKeyboardButton(_t('btn_cfg'), callback_data='trd:cfgh'),
+               types.InlineKeyboardButton(_t('btn_trade_modes'), callback_data='trd:tm:0'),
                types.InlineKeyboardButton(_t('btn_photo'), callback_data='trd:ph'))
     _bot.send_message(call.message.chat.id, _t('adm_title'), reply_markup=markup)
     _answer(call)
 
 
+def _photo_state(mode):
+    """Whether this mode has its own picture, borrows the shared one, or has none."""
+    if own_photo(mode):
+        return _t('ph_set')
+    return _t('ph_shared') if photo(mode) else _t('ph_unset')
+
+
 def _photo_menu(call):
+    """Sea and land are announced separately, so each picks its own picture."""
     if not _require_admin(call):
         return
-    current = photo()
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton(_t('btn_ph_set'), callback_data='trd:phs'))
-    if current:
-        markup.add(types.InlineKeyboardButton(_t('btn_ph_clear'), callback_data='trd:phc'))
+    for mode in PHOTO_MODES:
+        markup.add(types.InlineKeyboardButton(
+            _t('btn_ph_mode_' + mode, state=_photo_state(mode)),
+            callback_data=f'trd:phm:{mode}'))
+    # The shared picture is still reachable: it is what a mode with no picture
+    # of its own falls back to, and an old install already has one.
+    markup.add(types.InlineKeyboardButton(_t('btn_ph_mode_both', state=_photo_state('both')),
+                                          callback_data='trd:phm:both'))
+    _bot.send_message(call.message.chat.id, _t('ph_home'), reply_markup=markup)
+    _answer(call)
+
+
+def _photo_mode_menu(call, mode):
+    if not _require_admin(call):
+        return
+    if mode not in PHOTO_MODES and mode != 'both':
+        _answer(call, _t('err_generic'))
+        return
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(_t('btn_ph_set'), callback_data=f'trd:phs:{mode}'))
+    if own_photo(mode if mode in PHOTO_MODES else None):
+        markup.add(types.InlineKeyboardButton(_t('btn_ph_clear'),
+                                              callback_data=f'trd:phc:{mode}'))
+    markup.add(types.InlineKeyboardButton(_t('btn_ph_back'), callback_data='trd:ph'))
     _bot.send_message(call.message.chat.id,
-                      _t('ph_title', state=_t('ph_set') if current else _t('ph_unset')),
+                      _t('ph_title', mode=_t('ph_mode_' + mode), state=_photo_state(mode)),
                       reply_markup=markup)
     _answer(call)
 
 
-def _photo_ask(call):
+def _photo_ask(call, mode):
     if not _require_admin(call):
         return
+    if mode not in PHOTO_MODES and mode != 'both':
+        _answer(call, _t('err_generic'))
+        return
     _answer(call)
-    _bot.send_message(call.message.chat.id, _t('ph_ask'))
+    _bot.send_message(call.message.chat.id, _t('ph_ask', mode=_t('ph_mode_' + mode)))
     _next_step(call.message, call.from_user.id,
-               lambda msg: _photo_save(msg, call.from_user.id))
+               lambda msg: _photo_save(msg, call.from_user.id, mode))
 
 
-def _photo_save(message, actor_id):
+def _photo_save(message, actor_id, mode='both'):
     if not _admin_check(actor_id):
         return
     if not getattr(message, 'photo', None):
         _bot.send_message(message.chat.id, _t('ph_not_photo'))
         return
-    set_photo(message.photo[-1].file_id)
-    _log(actor_id, 'trade_photo', '', 'set')
-    _bot.send_message(message.chat.id, _t('ph_saved'))
+    set_photo(message.photo[-1].file_id, mode if mode in PHOTO_MODES else None)
+    _log(actor_id, 'trade_photo', mode, 'set')
+    _bot.send_message(message.chat.id, _t('ph_saved', mode=_t('ph_mode_' + mode)))
 
 
-def _photo_clear(call):
+def _photo_clear(call, mode):
     if not _require_admin(call):
         return
-    set_photo('')
-    _log(call.from_user.id, 'trade_photo', '', 'cleared')
+    if mode not in PHOTO_MODES and mode != 'both':
+        _answer(call, _t('err_generic'))
+        return
+    set_photo('', mode if mode in PHOTO_MODES else None)
+    _log(call.from_user.id, 'trade_photo', mode, 'cleared')
     _answer(call, _t('ph_cleared'))
+    _photo_mode_menu(call, mode)
+
+
+# ---------------------------------------------------------------------------
+# Item 10: closing one route for one country
+#
+# Not every country has a coast. An admin closes a country's sea or land trade
+# here, and that country neither sends nor receives that way until it is
+# reopened. Trades already in flight are left alone — the cargo has to arrive.
+# ---------------------------------------------------------------------------
+
+
+def mode_open(group_id, mode):
+    """False only when an admin has deliberately closed this route here."""
+    rows = _q("SELECT open FROM group_trade_modes WHERE group_id=? AND mode=?",
+              (group_id, mode))
+    return bool(rows[0]['open']) if rows else True
+
+
+def set_mode_open(group_id, mode, is_open):
+    if mode not in PHOTO_MODES:
+        return
+    _exec("INSERT OR REPLACE INTO group_trade_modes (group_id, mode, open) VALUES (?, ?, ?)",
+          (group_id, mode, 1 if is_open else 0))
+
+
+def open_modes(group_id):
+    return {mode: mode_open(group_id, mode) for mode in PHOTO_MODES}
+
+
+def _mode_list(call, page):
+    """Every country, with which of its two routes are open."""
+    if not _require_admin(call):
+        return
+    groups = [g['group_id'] for g in _q("SELECT DISTINCT group_id FROM users ORDER BY group_id")]
+    if not groups:
+        _answer(call, _t('adm_no_groups'), alert=True)
+        return
+    pages = max(1, (len(groups) + OWN_PAGE_SIZE - 1) // OWN_PAGE_SIZE)
+    page = max(0, min(page, pages - 1))
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for gid in groups[page * OWN_PAGE_SIZE:(page + 1) * OWN_PAGE_SIZE]:
+        state = open_modes(gid)
+        marks = ' '.join(_t('tm_on' if state[m] else 'tm_off', mode=_t('ph_mode_' + m))
+                         for m in PHOTO_MODES)
+        markup.add(types.InlineKeyboardButton(f"{_title(gid)} — {marks}",
+                                              callback_data=f'trd:tmg:{gid}'))
+    nav = []
+    if page > 0:
+        nav.append(types.InlineKeyboardButton(_t('btn_prev'), callback_data=f'trd:tm:{page - 1}'))
+    if page < pages - 1:
+        nav.append(types.InlineKeyboardButton(_t('btn_next'), callback_data=f'trd:tm:{page + 1}'))
+    if nav:
+        markup.add(*nav)
+    _bot.send_message(call.message.chat.id, _t('tm_title', p=page + 1, n=pages),
+                      reply_markup=markup)
+    _answer(call)
+
+
+def _mode_screen(call, gid):
+    if not _require_admin(call):
+        return
+    state = open_modes(gid)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for mode in PHOTO_MODES:
+        key = 'btn_tm_close' if state[mode] else 'btn_tm_open'
+        markup.add(types.InlineKeyboardButton(_t(key, mode=_t('ph_mode_' + mode)),
+                                              callback_data=f'trd:tmt:{gid}:{mode}'))
+    markup.add(types.InlineKeyboardButton(_t('btn_tm_back'), callback_data='trd:tm:0'))
+    lines = '\n'.join(_t('tm_row', mode=_t('ph_mode_' + m),
+                          state=_t('tm_state_on' if state[m] else 'tm_state_off'))
+                      for m in PHOTO_MODES)
+    _bot.send_message(call.message.chat.id,
+                      _t('tm_group', g=_esc(_title(gid)), lines=lines),
+                      reply_markup=markup, parse_mode='HTML')
+    _answer(call)
+
+
+def _mode_toggle(call, gid, mode):
+    if not _require_admin(call):
+        return
+    if mode not in PHOTO_MODES:
+        _answer(call, _t('err_generic'))
+        return
+    new_state = not mode_open(gid, mode)
+    set_mode_open(gid, mode, new_state)
+    _log(call.from_user.id, 'trade_mode', _title(gid),
+         f"{mode}={'open' if new_state else 'closed'}")
+    _answer(call, _t('tm_toggled', mode=_t('ph_mode_' + mode),
+                     state=_t('tm_state_on' if new_state else 'tm_state_off')))
+    _mode_screen(call, gid)
 
 
 def _home_pick_group(call, mcode):
@@ -1817,38 +2326,74 @@ def _owner_set(call, nid, gid):
         _bot.send_message(call.message.chat.id, _t('own_cleared', node=node))
 
 
-CFG_PAGE_SIZE = 10
+CFG_PAGE_SIZE = 8
 
 
-def _config_menu(call, page):
+def _config_home(call):
+    """The three sections, with a count each, instead of four unlabelled pages."""
     if not _require_admin(call):
         return
-    keys = list(CONFIG_DEFAULTS)
-    pages = (len(keys) + CFG_PAGE_SIZE - 1) // CFG_PAGE_SIZE
-    page = max(0, min(page, pages - 1))
     markup = types.InlineKeyboardMarkup(row_width=1)
-    for k in keys[page * CFG_PAGE_SIZE:(page + 1) * CFG_PAGE_SIZE]:
-        markup.add(types.InlineKeyboardButton(f"{k} = {cfg(k)}", callback_data=f'trd:ck:{k}'))
+    for section, _keys in CONFIG_SECTIONS:
+        markup.add(types.InlineKeyboardButton(
+            _t('cfg_sec_' + section, n=len(config_keys(section))),
+            callback_data=f'trd:cfg:{section}:0'))
+    _bot.send_message(call.message.chat.id, _t('cfg_home'), reply_markup=markup)
+    _answer(call)
+
+
+def _config_menu(call, section, page):
+    """One section's settings, each shown by name with its current value."""
+    if not _require_admin(call):
+        return
+    keys = config_keys(section)
+    if not keys:
+        _answer(call, _t('cfg_sec_empty'), alert=True)
+        return
+    pages = max(1, (len(keys) + CFG_PAGE_SIZE - 1) // CFG_PAGE_SIZE)
+    page = max(0, min(page, pages - 1))
+    window = keys[page * CFG_PAGE_SIZE:(page + 1) * CFG_PAGE_SIZE]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for k in window:
+        markup.add(types.InlineKeyboardButton(f"{config_label(k)} — {cfg(k)}",
+                                              callback_data=f'trd:ck:{k}'))
     nav = []
     if page > 0:
-        nav.append(types.InlineKeyboardButton(_t('btn_prev'), callback_data=f'trd:cfg:{page - 1}'))
+        nav.append(types.InlineKeyboardButton(_t('btn_prev'),
+                                              callback_data=f'trd:cfg:{section}:{page - 1}'))
     if page < pages - 1:
-        nav.append(types.InlineKeyboardButton(_t('btn_next'), callback_data=f'trd:cfg:{page + 1}'))
+        nav.append(types.InlineKeyboardButton(_t('btn_next'),
+                                              callback_data=f'trd:cfg:{section}:{page + 1}'))
     if nav:
         markup.add(*nav)
-    _bot.send_message(call.message.chat.id, _t('cfg_title', p=page + 1), reply_markup=markup)
+    markup.add(types.InlineKeyboardButton(_t('btn_cfg_back'), callback_data='trd:cfgh'))
+    # The list itself explains what each row does, so nobody has to tap a
+    # setting to find out whether it is the one they meant.
+    body = '\n'.join(_t('cfg_row', name=config_label(k), val=cfg(k), help=config_help(k))
+                     for k in window)
+    _bot.send_message(call.message.chat.id,
+                      _t('cfg_title', section=_t('cfg_sec_name_' + section),
+                         p=page + 1, n=pages) + '\n\n' + body,
+                      reply_markup=markup, parse_mode='HTML')
     _answer(call)
+
+
+def _known_cfg(key):
+    """A setting is editable if it shipped with the game or prices a real chokepoint."""
+    return key in CONFIG_DEFAULTS or key in toll_keys()
 
 
 def _ask_cfg(call, key):
     if not _require_admin(call):
         return
-    if key not in CONFIG_DEFAULTS:
+    if not _known_cfg(key):
         _answer(call, _t('err_generic'))
         return
     chat_id = call.message.chat.id
     _answer(call)
-    _bot.send_message(chat_id, _t('cfg_ask', key=key, val=cfg(key)))
+    _bot.send_message(chat_id, _t('cfg_ask', name=config_label(key), key=key,
+                                  val=cfg(key), help=config_help(key)),
+                      parse_mode='HTML')
 
     def on_value(msg):
         try:
@@ -1860,6 +2405,6 @@ def _ask_cfg(call, key):
             return
         set_cfg(key, val)
         _log(call.from_user.id, 'trade_config', key, str(val))
-        _bot.send_message(chat_id, _t('cfg_set', key=key, val=val))
+        _bot.send_message(chat_id, _t('cfg_set', name=config_label(key), val=val))
 
     _next_step(call.message, call.from_user.id, on_value)

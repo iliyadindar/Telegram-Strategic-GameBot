@@ -13,6 +13,7 @@ import html
 from telebot import types
 
 import asset_catalog as catalog
+import country_assets
 from admin_strings import STRINGS
 
 _bot = None
@@ -26,6 +27,12 @@ _next_step = None
 _back_button = None
 
 PAGE_SIZE = 8
+
+# Ops this module owns whose name does not start with 'cat'. admin_panel routes
+# by prefix, so anything shorter has to be named here. The per-level screens are
+# short on purpose: a building key and a resource key spelled out together
+# overflow Telegram's 64-byte callback budget.
+OPS = frozenset({'clv', 'clva', 'clvl', 'clvc', 'clvo', 'clvd', 'cmax'})
 
 # in-progress "add a type" wizards, keyed by user id
 _wizards = {}
@@ -108,6 +115,20 @@ def handle(call, parts):
         _cost_list(call, parts[2])
     elif op == 'catcosts':
         _ask_cost(call, parts[2], parts[3])
+    elif op == 'clv':
+        _level_list(call, parts[2])
+    elif op == 'clva':
+        _ask_new_level(call, parts[2])
+    elif op == 'clvl':
+        _level_screen(call, parts[2], int(parts[3]))
+    elif op == 'clvc':
+        _ask_level_cost(call, parts[2], int(parts[3]), int(parts[4]))
+    elif op == 'clvo':
+        _ask_level_output(call, parts[2], int(parts[3]))
+    elif op == 'clvd':
+        _clear_level(call, parts[2], int(parts[3]))
+    elif op == 'cmax':
+        _ask_max_level(call, parts[2])
     elif op == 'cathide':
         _hide(call, parts[2])
     elif op == 'catshow':
@@ -188,9 +209,13 @@ def _entry_screen(call, key):
         return
 
     if row['kind'] == 'building':
+        tuned = sorted(set(catalog.tuned_cost_levels(key)) |
+                       set(catalog.tuned_output_levels(key)))
         extra = _t('cat_extra_building',
                    produces=_label(row['produces']) if row['produces'] else _t('cat_produces_none'),
-                   output=row['output'], costs=_cost_summary(key))
+                   output=row['output'], costs=_cost_summary(key),
+                   max=row['max_level'] or _t('cat_max_none'),
+                   tuned=', '.join(str(n) for n in tuned) if tuned else _t('cat_levels_none'))
     elif row['kind'] == 'resource':
         extra = _t('cat_extra_resource',
                    tradeable=_t('cat_yes') if row['tradeable'] else _t('cat_no'))
@@ -213,6 +238,10 @@ def _entry_screen(call, key):
                                                   callback_data=f'ap:catout:{key}'))
         buttons.append(types.InlineKeyboardButton(_t('btn_cat_costs'),
                                                   callback_data=f'ap:catcost:{key}'))
+        buttons.append(types.InlineKeyboardButton(_t('btn_cat_levels'),
+                                                  callback_data=f'ap:clv:{key}'))
+        buttons.append(types.InlineKeyboardButton(_t('btn_cat_max'),
+                                                  callback_data=f'ap:cmax:{key}'))
     if row['kind'] == 'resource':
         buttons.append(types.InlineKeyboardButton(_t('btn_cat_tradeable'),
                                                   callback_data=f'ap:cattr:{key}'))
@@ -348,6 +377,9 @@ def _delete_apply(call, key):
     except catalog.CatalogError as exc:
         _answer(call, _err(exc), alert=True)
         return
+    # Per-country overrides for a type that no longer exists would keep a
+    # country marked as "does not have" something nobody has.
+    country_assets.forget(key)
     _log(call.from_user.id, 'asset_remove', key, 'destroyed' if dropped else 'column kept')
     _bot.send_message(call.message.chat.id,
                       _t('cat_deleted' if dropped else 'cat_deleted_kept_column', label=label))
@@ -476,6 +508,196 @@ def _apply_cost(call, key, resource, value):
     _log(call.from_user.id, 'asset_cost', key, f'{resource}={value}')
     _bot.send_message(call.message.chat.id, _t('cat_cost_set'))
     _cost_list(call, key)
+
+
+# ---------------------------------------------------------------------------
+# Per-level tuning
+#
+# A building's price and yield are flat by default: one cost row and one output
+# number that every level shares. Here an admin gives a single level numbers of
+# its own — level 7 costing more than level 6, yielding less, or both — and
+# every level nobody has touched keeps falling back to the flat values.
+# ---------------------------------------------------------------------------
+
+
+def _resource_index(i):
+    """The resource a level-cost button stands for.
+
+    The button carries the resource's position rather than its name because a
+    key may be 31 characters and Telegram gives the whole callback 64: a
+    building and a resource spelled out together do not fit. The list is
+    rendered and read back in the same breath, so the position is stable.
+    """
+    resources = catalog.keys('resource')
+    return resources[i] if 0 <= i < len(resources) else None
+
+
+def _level_cost_line(key, level):
+    """One level's price, marked as its own or inherited from the flat cost."""
+    if not catalog.level_cost_is_set(key, level):
+        return _t('cat_lvl_inherited')
+    costs = catalog.upgrade_cost(key, level)
+    if not costs:
+        return _t('cat_costs_none')
+    return ' · '.join(f"{_label(res)} {amount}" for res, amount in costs.items())
+
+
+def _level_list(call, key):
+    """Every level this building has been tuned at, plus a way to add one."""
+    if not _require_admin(call):
+        return
+    row = catalog.entry(key)
+    if row is None or row['kind'] != 'building':
+        _answer(call, _t('cat_err_not_a_building'), alert=True)
+        return
+    levels = sorted(set(catalog.tuned_cost_levels(key)) | set(catalog.tuned_output_levels(key)))
+    buttons = [types.InlineKeyboardButton(
+        _t('btn_cat_level', level=level,
+           cost=_level_cost_line(key, level), out=catalog.level_output(key, level)),
+        callback_data=f'ap:clvl:{key}:{level}') for level in levels]
+    add = [types.InlineKeyboardButton(_t('btn_cat_level_add'), callback_data=f'ap:clva:{key}')]
+    _show(call, _t('cat_levels_title', label=_esc(_label(key)),
+                   costs=_cost_summary(key), output=row['output'],
+                   max=row['max_level'] or _t('cat_max_none'),
+                   tuned=', '.join(str(n) for n in levels) if levels else _t('cat_levels_none')),
+          _markup(buttons, add, back=f'ap:cate:{key}'))
+    _answer(call)
+
+
+def _ask_new_level(call, key):
+    """Which level to tune. Its price starts as a copy of the flat one."""
+    if not _require_admin(call):
+        return
+    row = catalog.entry(key)
+    if row is None or row['kind'] != 'building':
+        _answer(call, _t('cat_err_not_a_building'), alert=True)
+        return
+    _answer(call)
+    _ask_number(call, _t('cat_ask_level', max=catalog.LEVEL_CEILING),
+                lambda value: _open_new_level(call, key, value), minimum=1)
+
+
+def _open_new_level(call, key, level):
+    try:
+        catalog.seed_level_cost(key, level)
+    except catalog.CatalogError as exc:
+        _bot.send_message(call.message.chat.id, _err(exc))
+        return
+    _log(call.from_user.id, 'asset_level', key, f'level {level} opened')
+    _level_screen(call, key, level)
+
+
+def _level_screen(call, key, level):
+    """One level: what it costs, resource by resource, and what it yields."""
+    if not _require_admin(call):
+        return
+    row = catalog.entry(key)
+    if row is None or row['kind'] != 'building':
+        _answer(call, _t('cat_err_not_a_building'), alert=True)
+        return
+    costs = catalog.level_costs(key, level)
+    buttons = [types.InlineKeyboardButton(f"{_label(res)} — {costs.get(res, 0)}",
+                                          callback_data=f'ap:clvc:{key}:{level}:{i}')
+               for i, res in enumerate(catalog.keys('resource'))]
+    tools = [types.InlineKeyboardButton(_t('btn_cat_level_output'),
+                                        callback_data=f'ap:clvo:{key}:{level}'),
+             types.InlineKeyboardButton(_t('btn_cat_level_clear'),
+                                        callback_data=f'ap:clvd:{key}:{level}')]
+    yields = _t('cat_lvl_output_own') if catalog.level_output_is_set(key, level) \
+        else _t('cat_lvl_output_flat')
+    _show(call, _t('cat_level_title', label=_esc(_label(key)), level=level,
+                   cost=_level_cost_line(key, level),
+                   out=catalog.level_output(key, level), source=yields,
+                   total=catalog.output_at_level(key, level)),
+          _markup(buttons, tools, back=f'ap:clv:{key}'))
+    _answer(call)
+
+
+def _ask_level_cost(call, key, level, index):
+    if not _require_admin(call):
+        return
+    resource = _resource_index(index)
+    if resource is None:
+        _answer(call, _t('cat_err_bad_resource'), alert=True)
+        return
+    _answer(call)
+    _ask_number(call, _t('cat_ask_level_cost', res=_label(resource), level=level),
+                lambda value: _apply_level_cost(call, key, level, resource, value))
+
+
+def _apply_level_cost(call, key, level, resource, value):
+    try:
+        catalog.set_level_cost(key, level, resource, value)
+    except catalog.CatalogError as exc:
+        _bot.send_message(call.message.chat.id, _err(exc))
+        return
+    _log(call.from_user.id, 'asset_level', key, f'L{level} {resource}={value}')
+    _bot.send_message(call.message.chat.id, _t('cat_cost_set'))
+    _level_screen(call, key, level)
+
+
+def _ask_level_output(call, key, level):
+    if not _require_admin(call):
+        return
+    _answer(call)
+    _ask_number(call, _t('cat_ask_level_output', level=level),
+                lambda value: _apply_level_output(call, key, level, value))
+
+
+def _apply_level_output(call, key, level, value):
+    try:
+        catalog.set_level_output(key, level, value)
+    except catalog.CatalogError as exc:
+        _bot.send_message(call.message.chat.id, _err(exc))
+        return
+    _log(call.from_user.id, 'asset_level', key, f'L{level} yields {value}')
+    _bot.send_message(call.message.chat.id, _t('cat_output_set'))
+    _level_screen(call, key, level)
+
+
+def _clear_level(call, key, level):
+    """Hand one level back to the flat cost and the flat yield."""
+    if not _require_admin(call):
+        return
+    try:
+        catalog.clear_level_cost(key, level)
+        catalog.clear_level_output(key, level)
+    except catalog.CatalogError as exc:
+        _answer(call, _err(exc), alert=True)
+        return
+    _log(call.from_user.id, 'asset_level', key, f'L{level} cleared')
+    _answer(call, _t('cat_level_cleared', level=level))
+    _level_list(call, key)
+
+
+# ---------------------------------------------------------------------------
+# The level ceiling
+# ---------------------------------------------------------------------------
+
+
+def _ask_max_level(call, key):
+    if not _require_admin(call):
+        return
+    row = catalog.entry(key)
+    if row is None or row['kind'] != 'building':
+        _answer(call, _t('cat_err_not_a_building'), alert=True)
+        return
+    _answer(call)
+    _ask_number(call, _t('cat_ask_max', current=row['max_level'] or _t('cat_max_none'),
+                         ceiling=catalog.LEVEL_CEILING),
+                lambda value: _apply_max_level(call, key, value))
+
+
+def _apply_max_level(call, key, value):
+    try:
+        catalog.set_max_level(key, value)
+    except catalog.CatalogError as exc:
+        _bot.send_message(call.message.chat.id, _err(exc))
+        return
+    _log(call.from_user.id, 'asset_level', key, f'max level {value or "-"}')
+    _bot.send_message(call.message.chat.id,
+                      _t('cat_max_set', max=value) if value else _t('cat_max_lifted'))
+    _entry_screen(call, key)
 
 
 def _hide(call, key):
@@ -630,15 +852,15 @@ def _finish_add(call, message):
 # ---------------------------------------------------------------------------
 
 
-def _ask_number(call, prompt, done, chat_id=None):
-    """Ask for a non-negative integer, re-asking until one arrives."""
+def _ask_number(call, prompt, done, chat_id=None, minimum=0):
+    """Ask for an integer of at least `minimum`, re-asking until one arrives."""
     chat_id = call.message.chat.id if chat_id is None else chat_id
     _bot.send_message(chat_id, prompt)
 
     def on_text(message):
         try:
             value = int((message.text or '').strip())
-            if value < 0:
+            if value < minimum:
                 raise ValueError
         except ValueError:
             _bot.send_message(chat_id, STRINGS[_lang]['cat_bad_number'])

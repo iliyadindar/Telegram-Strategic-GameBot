@@ -7,9 +7,17 @@ weekly output and its upgrade cost) from inside Telegram.
 
     asset_catalog        one row per type: kind, order, default, production
     asset_labels         its display name per language
-    asset_upgrade_costs  what one level of a building costs
+    asset_upgrade_costs  what one level of a building costs by default
+    asset_level_costs    what one *particular* level costs, overriding the above
+    asset_level_output   what one *particular* level yields, overriding `output`
     asset_kind_order     which section comes first in the status message
     asset_removed        builtins an admin deleted, so _seed() leaves them dead
+
+A building's cost and yield start out the same at every level: one flat row in
+asset_upgrade_costs and one `output` number. An admin who wants level 7 to cost
+more than level 6, or to yield less, writes a row for level 7 alone; every other
+level keeps falling back to the flat value. `max_level` caps the ladder — 0, the
+default, means it never ends.
 
 The types that shipped with the game are seeded as `builtin` on first run, with
 exactly the values the hardcoded version used, so existing saves are unchanged.
@@ -32,13 +40,13 @@ RESERVED = frozenset({'user_id', 'group_id', 'treaties', 'home_sea', 'home_land'
 
 KINDS = ('resource', 'unit', 'building')
 
-# The four columns trade_system writes SQL against by name rather than through
+# The five columns trade_system writes SQL against by name rather than through
 # this module: money carries every fee, toll, escrow and refund, and the three
-# ship types are the sea vehicles themselves. Dropping one of these columns
+# ship types plus the caravan are the vehicles themselves. Dropping one of these columns
 # would make the next refund raise and lose whatever cargo was in flight, so
 # remove() refuses them. hide() does not — hiding keeps the column, so the trade
 # system still works against a type players no longer see.
-ENGINE_KEYS = frozenset({'money', 'small_ships', 'medium_ships', 'large_ships'})
+ENGINE_KEYS = frozenset({'money', 'small_ships', 'medium_ships', 'large_ships', 'caravans'})
 
 # The status message's section order when nothing has reordered it.
 DEFAULT_KIND_ORDER = ('resource', 'building', 'unit')
@@ -63,7 +71,8 @@ BUILTIN_RESOURCES = ('money', 'gold', 'iron', 'stones', 'wood', 'food', 'meat', 
 RESOURCE_DEFAULT = 2000
 
 BUILTIN_UNITS = ('swordsmen', 'gunmen', 'cavalry_swordsmen', 'cavalry_gunmen', 'special_guard',
-                 'medium_cannons', 'large_cannons', 'small_ships', 'medium_ships', 'large_ships')
+                 'medium_cannons', 'large_cannons', 'small_ships', 'medium_ships', 'large_ships',
+                 'caravans')
 UNIT_DEFAULT = 1500
 
 # building key -> (what it produces, how much per level per weekly cycle)
@@ -88,6 +97,11 @@ BUILTIN_BUILDINGS = (
     ('large_shipyard', 'large_ships', 500),
 )
 BUILDING_DEFAULT = 0
+
+# The level ceiling every shipped building starts with. 0 means no ceiling,
+# which is how the game behaved before max_level existed; an admin sets a real
+# number per building from the catalog screen.
+BUILTIN_MAX_LEVEL = 0
 
 # Seeded from what apply_upgrade() actually deducted. The old check_upgrade_cost()
 # tested a different resource than the deduction for five buildings (gold_mine,
@@ -122,7 +136,7 @@ BUILTIN_LABELS = {
         'cavalry_swordsmen': '🗡️ سواره‌نظام شمشیرزن', 'cavalry_gunmen': '🔫 سواره‌نظام تفنگدار',
         'special_guard': '🛡️ گارد ویژه', 'medium_cannons': '🎯 توپ متوسط',
         'large_cannons': '🎯 توپ بزرگ', 'small_ships': '⛵ کشتی کوچک',
-        'medium_ships': '🚢 کشتی متوسط', 'large_ships': '🛳️ کشتی بزرگ',
+        'medium_ships': '🚢 کشتی متوسط', 'large_ships': '🛳️ کشتی بزرگ', 'caravans': '🐫 کاروان',
         'stone_factory': '🏭 کارخونه سنگ', 'wood_factory': '🏭 کارخونه چوب',
         'iron_factory': '🏭 کارخونه آهن', 'gold_mine': '⛏ معدن طلا', 'farm': '🌾 زمین کشاورزی',
         'animal_farm': '🐄 دامداری', 'clothes_factory': '🧵 کارخانه لباس', 'bank': '🏦 بانک',
@@ -142,7 +156,7 @@ BUILTIN_LABELS = {
         'cavalry_swordsmen': '🗡️ Cavalry Swordsmen', 'cavalry_gunmen': '🔫 Cavalry Gunmen',
         'special_guard': '🛡️ Special Guard', 'medium_cannons': '🎯 Medium Cannons',
         'large_cannons': '🎯 Large Cannons', 'small_ships': '⛵ Small Ships',
-        'medium_ships': '🚢 Medium Ships', 'large_ships': '🛳️ Large Ships',
+        'medium_ships': '🚢 Medium Ships', 'large_ships': '🛳️ Large Ships', 'caravans': '🐫 Caravans',
         'stone_factory': '🏭 Stone Factory', 'wood_factory': '🏭 Wood Factory',
         'iron_factory': '🏭 Iron Factory', 'gold_mine': '⛏ Gold Mine', 'farm': '🌾 Farm',
         'animal_farm': '🐄 Animal Farm', 'clothes_factory': '🧵 Clothes Factory',
@@ -163,7 +177,7 @@ BUILTIN_LABELS = {
         'cavalry_swordsmen': '🗡️ Atlı Kılıçlı', 'cavalry_gunmen': '🔫 Atlı Tüfekçi',
         'special_guard': '🛡️ Özel Muhafız', 'medium_cannons': '🎯 Orta Top',
         'large_cannons': '🎯 Büyük Top', 'small_ships': '⛵ Küçük Gemi',
-        'medium_ships': '🚢 Orta Gemi', 'large_ships': '🛳️ Büyük Gemi',
+        'medium_ships': '🚢 Orta Gemi', 'large_ships': '🛳️ Büyük Gemi', 'caravans': '🐫 Kervan',
         'stone_factory': '🏭 Taş Fabrikası', 'wood_factory': '🏭 Odun Fabrikası',
         'iron_factory': '🏭 Demir Fabrikası', 'gold_mine': '⛏ Altın Madeni',
         'farm': '🌾 Çiftlik', 'animal_farm': '🐄 Hayvan Çiftliği',
@@ -231,10 +245,32 @@ def _migrate():
         _conn.execute('''CREATE TABLE IF NOT EXISTS asset_removed (
             key TEXT PRIMARY KEY
         )''')
+        # A cost that applies to one level only. Absent, upgrade_cost() falls
+        # back to the flat asset_upgrade_costs row, which is how every building
+        # behaves until an admin tunes a particular level.
+        _conn.execute('''CREATE TABLE IF NOT EXISTS asset_level_costs (
+            building TEXT NOT NULL,
+            level    INTEGER NOT NULL,
+            resource TEXT NOT NULL,
+            amount   INTEGER NOT NULL,
+            PRIMARY KEY (building, level, resource)
+        )''')
+        # Same idea for what a level yields each weekly cycle.
+        _conn.execute('''CREATE TABLE IF NOT EXISTS asset_level_output (
+            building TEXT NOT NULL,
+            level    INTEGER NOT NULL,
+            output   INTEGER NOT NULL,
+            PRIMARY KEY (building, level)
+        )''')
         _conn.execute('''CREATE TABLE IF NOT EXISTS asset_kind_order (
             kind     TEXT PRIMARY KEY,
             position INTEGER NOT NULL
         )''')
+        # Added after the first release, so an existing database has to grow it.
+        columns = {row[1] for row in _conn.execute("PRAGMA table_info(asset_catalog)")}
+        if 'max_level' not in columns:
+            _conn.execute("ALTER TABLE asset_catalog ADD COLUMN max_level INTEGER NOT NULL "
+                          "DEFAULT 0")
         _conn.executemany(
             "INSERT OR IGNORE INTO asset_kind_order (kind, position) VALUES (?, ?)",
             [(kind, (i + 1) * 10) for i, kind in enumerate(DEFAULT_KIND_ORDER)])
@@ -242,7 +278,7 @@ def _migrate():
 
 
 _CATALOG_COLUMNS = ("(key, kind, position, default_value, builtin, hidden, produces, output, "
-                    "tradeable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    "tradeable, max_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 
 
 def _builtin_rows():
@@ -252,9 +288,10 @@ def _builtin_rows():
             (BUILTIN_RESOURCES, 'resource', RESOURCE_DEFAULT, 1),
             (BUILTIN_UNITS, 'unit', UNIT_DEFAULT, 0)):
         for index, key in enumerate(keys, start=1):
-            rows.append((key, kind, index * 10, default, 1, 0, '', 0, tradeable))
+            rows.append((key, kind, index * 10, default, 1, 0, '', 0, tradeable, 0))
     for index, (key, produces, output) in enumerate(BUILTIN_BUILDINGS, start=1):
-        rows.append((key, 'building', index * 10, BUILDING_DEFAULT, 1, 0, produces, output, 0))
+        rows.append((key, 'building', index * 10, BUILDING_DEFAULT, 1, 0, produces, output, 0,
+                     BUILTIN_MAX_LEVEL))
     return rows
 
 
@@ -457,27 +494,233 @@ def tradeable_resources():
 
 
 def production():
-    """(building, produces, output) for visible buildings that actually produce."""
+    """(building, produces, output) for visible buildings that actually produce.
+
+    `output` here is the flat per-level yield. A building whose flat yield is 0
+    but which has per-level rows still produces, so it is listed too — what a
+    given level is actually worth comes from output_at_level().
+    """
     out = []
     visible = set(all_keys())
+    tuned = _tuned_output_buildings()
     for row in entries('building'):
-        if row['produces'] and row['output'] and row['produces'] in visible:
+        if not row['produces'] or row['produces'] not in visible:
+            continue
+        if row['output'] or row['key'] in tuned:
             out.append((row['key'], row['produces'], row['output']))
     return out
 
 
-def upgrade_cost(building):
-    """What one level costs, in resources that are actually in the game.
+def _tuned_output_buildings():
+    """Buildings that have at least one per-level yield of their own."""
+    return {row['building'] for row in
+            _q("SELECT DISTINCT building FROM asset_level_output WHERE output > 0")}
+
+
+def upgrade_cost(building, level=None):
+    """What a level costs, in resources that are actually in the game.
+
+    With no `level` this is the building's flat cost — the one that applies to
+    every level nobody has tuned, and the one the catalog screen edits. With a
+    `level` (the level being bought, so 1 is the first upgrade up from zero) a
+    per-level cost overrides it whenever one exists.
 
     A cost naming a hidden resource is skipped rather than charged: deducting
     something the group cannot see anywhere would be indistinguishable from a
     bug. The row survives, so re-enabling the resource restores the cost.
     """
     visible = set(keys('resource'))
-    return {row['resource']: row['amount']
-            for row in _q("SELECT resource, amount FROM asset_upgrade_costs WHERE building=?",
-                          (building,))
+    if level is not None and level_cost_is_set(building, level):
+        rows = _q("SELECT resource, amount FROM asset_level_costs "
+                  "WHERE building=? AND level=?", (building, int(level)))
+    else:
+        rows = _q("SELECT resource, amount FROM asset_upgrade_costs WHERE building=?",
+                  (building,))
+    return {row['resource']: row['amount'] for row in rows
             if row['amount'] > 0 and row['resource'] in visible}
+
+
+# ---------------------------------------------------------------------------
+# Per-level tuning: what one particular level costs and yields
+# ---------------------------------------------------------------------------
+
+# The highest level anything may be tuned at. Not a game rule — a bound that
+# stops a typo from asking the panel to render a hundred thousand rows.
+LEVEL_CEILING = 1000
+
+
+def _check_level(level):
+    """A level is a small positive integer. 1 is the first upgrade up from zero."""
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        raise CatalogError('bad_level')
+    if not 1 <= level <= LEVEL_CEILING:
+        raise CatalogError('bad_level')
+    return level
+
+
+def level_cost_is_set(building, level):
+    """True when this level has a cost of its own rather than the flat one."""
+    return bool(_q("SELECT 1 FROM asset_level_costs WHERE building=? AND level=? LIMIT 1",
+                   (building, int(level))))
+
+
+def level_costs(building, level):
+    """The raw per-level cost rows, hidden resources included. {} when unset."""
+    return {row['resource']: row['amount'] for row in
+            _q("SELECT resource, amount FROM asset_level_costs WHERE building=? AND level=?",
+               (building, int(level)))}
+
+
+def tuned_cost_levels(building):
+    """Every level this building has a cost of its own for, ascending."""
+    return tuple(row['level'] for row in
+                 _q("SELECT DISTINCT level FROM asset_level_costs WHERE building=? "
+                    "ORDER BY level", (building,)))
+
+
+def set_level_cost(building, level, resource, amount):
+    """Give one level its own price for one resource. 0 removes that resource.
+
+    Removing the last resource of a level drops the whole override, so the level
+    goes back to costing whatever the flat row says rather than costing nothing.
+    """
+    row = _require_known(building)
+    if row['kind'] != 'building':
+        raise CatalogError('not_a_building')
+    level = _check_level(level)
+    target = entry(resource)
+    if target is None or target['kind'] != 'resource':
+        raise CatalogError('bad_resource')
+    if int(amount) <= 0:
+        _exec("DELETE FROM asset_level_costs WHERE building=? AND level=? AND resource=?",
+              (building, level, resource))
+    else:
+        _exec("INSERT OR REPLACE INTO asset_level_costs (building, level, resource, amount) "
+              "VALUES (?, ?, ?, ?)", (building, level, resource, int(amount)))
+
+
+def clear_level_cost(building, level):
+    """Drop a level's own price. It falls back to the flat cost again."""
+    _require_known(building)
+    _exec("DELETE FROM asset_level_costs WHERE building=? AND level=?",
+          (building, int(level)))
+
+
+def seed_level_cost(building, level):
+    """Copy the flat cost onto one level, so it can be edited resource by resource.
+
+    Tuning a level starts from what it already costs rather than from nothing,
+    which is the difference between changing a price and quietly zeroing it.
+    """
+    row = _require_known(building)
+    if row['kind'] != 'building':
+        raise CatalogError('not_a_building')
+    level = _check_level(level)
+    flat = _q("SELECT resource, amount FROM asset_upgrade_costs WHERE building=?", (building,))
+    with _lock:
+        _conn.executemany(
+            "INSERT OR IGNORE INTO asset_level_costs (building, level, resource, amount) "
+            "VALUES (?, ?, ?, ?)",
+            [(building, level, r['resource'], r['amount']) for r in flat if r['amount'] > 0])
+        _conn.commit()
+    return level_costs(building, level)
+
+
+def level_output(building, level):
+    """What one level adds to the weekly yield: its own number, or the flat one."""
+    rows = _q("SELECT output FROM asset_level_output WHERE building=? AND level=?",
+              (building, int(level)))
+    if rows:
+        return rows[0]['output']
+    row = entry(building)
+    return row['output'] if row else 0
+
+
+def level_output_is_set(building, level):
+    return bool(_q("SELECT 1 FROM asset_level_output WHERE building=? AND level=? LIMIT 1",
+                   (building, int(level))))
+
+
+def tuned_output_levels(building):
+    """Every level this building has a yield of its own for, ascending."""
+    return tuple(row['level'] for row in
+                 _q("SELECT level FROM asset_level_output WHERE building=? ORDER BY level",
+                    (building,)))
+
+
+def set_level_output(building, level, amount):
+    """Give one level its own weekly yield. A negative amount is refused."""
+    row = _require_known(building)
+    if row['kind'] != 'building':
+        raise CatalogError('not_a_building')
+    level = _check_level(level)
+    if int(amount) < 0:
+        raise CatalogError('bad_output')
+    _exec("INSERT OR REPLACE INTO asset_level_output (building, level, output) VALUES (?, ?, ?)",
+          (building, level, int(amount)))
+
+
+def clear_level_output(building, level):
+    """Drop a level's own yield. It falls back to the flat `output` again."""
+    _require_known(building)
+    _exec("DELETE FROM asset_level_output WHERE building=? AND level=?",
+          (building, int(level)))
+
+
+def output_at_level(building, level):
+    """A building's total weekly yield once it has reached `level`.
+
+    Every level contributes level_output(), so an untuned building still yields
+    exactly level x output, the way it always did. A tuned level replaces only
+    its own contribution.
+    """
+    level = int(level)
+    if level <= 0:
+        return 0
+    row = entry(building)
+    if row is None:
+        return 0
+    flat = row['output']
+    total = flat * level
+    for tuned in _q("SELECT level, output FROM asset_level_output "
+                    "WHERE building=? AND level<=?", (building, level)):
+        total += tuned['output'] - flat
+    return max(0, total)
+
+
+# ---------------------------------------------------------------------------
+# The level ceiling
+# ---------------------------------------------------------------------------
+
+
+def max_level(building):
+    """The highest level this building may reach. 0 means there is no ceiling."""
+    row = entry(building)
+    return row['max_level'] if row else 0
+
+
+def set_max_level(building, value):
+    """Cap a building's level. 0 lifts the cap.
+
+    A level already above a newly-lowered cap is left alone: taking back
+    something a group has already paid for is a different decision from stopping
+    the next purchase, and only the second one was asked for.
+    """
+    row = _require_known(building)
+    if row['kind'] != 'building':
+        raise CatalogError('not_a_building')
+    value = int(value)
+    if not 0 <= value <= LEVEL_CEILING:
+        raise CatalogError('bad_level')
+    _exec("UPDATE asset_catalog SET max_level=? WHERE key=?", (value, building))
+
+
+def at_max_level(building, level):
+    """True when `level` is already the ceiling, so the next upgrade is refused."""
+    cap = max_level(building)
+    return bool(cap) and int(level) >= cap
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +728,8 @@ def upgrade_cost(building):
 # ---------------------------------------------------------------------------
 
 
-def add(key, kind, label_map, default_value=0, produces='', output=0, tradeable=0):
+def add(key, kind, label_map, default_value=0, produces='', output=0, tradeable=0,
+        max_level=0):
     """Register a new type and give `users` a column for it."""
     validate_new_key(key)
     if kind not in KINDS:
@@ -500,11 +744,12 @@ def add(key, kind, label_map, default_value=0, produces='', output=0, tradeable=
         position = (rows[0]['p'] if rows else 0) + 10
         _conn.execute(
             "INSERT INTO asset_catalog "
-            "(key, kind, position, default_value, builtin, hidden, produces, output, tradeable) "
-            "VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)",
+            "(key, kind, position, default_value, builtin, hidden, produces, output, tradeable, "
+            "max_level) VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?)",
             (key, kind, position, int(default_value), produces if kind == 'building' else '',
              int(output) if kind == 'building' else 0,
-             1 if (kind == 'resource' and tradeable) else 0))
+             1 if (kind == 'resource' and tradeable) else 0,
+             max(0, int(max_level)) if kind == 'building' else 0))
         _conn.commit()
     set_labels(key, label_map)
     ensure_columns()
@@ -703,7 +948,11 @@ def remove(key):
         # Buildings that produced it now produce nothing, rather than pointing
         # at a key production() would silently drop anyway.
         _conn.execute("UPDATE asset_catalog SET produces='', output=0 WHERE produces=?", (key,))
+        _conn.execute("DELETE FROM asset_level_output WHERE building IN "
+                      "(SELECT key FROM asset_catalog WHERE produces=?)", (key,))
         _conn.execute("DELETE FROM asset_upgrade_costs WHERE building=? OR resource=?", (key, key))
+        _conn.execute("DELETE FROM asset_level_costs WHERE building=? OR resource=?", (key, key))
+        _conn.execute("DELETE FROM asset_level_output WHERE building=?", (key,))
         _conn.execute("DELETE FROM asset_labels WHERE key=?", (key,))
         _conn.execute("DELETE FROM asset_catalog WHERE key=?", (key,))
         dropped = True
@@ -745,6 +994,9 @@ def factory_reset():
         _conn.execute("DELETE FROM asset_upgrade_costs")
         _conn.executemany("INSERT INTO asset_upgrade_costs (building, resource, amount) "
                           "VALUES (?, ?, ?)", _builtin_cost_rows())
+        # Per-level tuning is part of the shape of the game, so it goes too.
+        _conn.execute("DELETE FROM asset_level_costs")
+        _conn.execute("DELETE FROM asset_level_output")
         _conn.executemany("INSERT OR REPLACE INTO asset_kind_order (kind, position) "
                           "VALUES (?, ?)",
                           [(kind, (i + 1) * 10) for i, kind in enumerate(DEFAULT_KIND_ORDER)])
